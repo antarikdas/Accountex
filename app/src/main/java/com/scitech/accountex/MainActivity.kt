@@ -1,3 +1,5 @@
+in: com/scitech/accountex/MainActivity.kt
+
 package com.scitech.accountex
 
 import android.os.Bundle
@@ -7,26 +9,22 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import com.scitech.accountex.ui.screens.AddTransactionScreen
-import com.scitech.accountex.ui.screens.DashboardScreen
+import com.scitech.accountex.ui.screens.*
 import com.scitech.accountex.ui.theme.AccountexTheme
-import com.scitech.accountex.viewmodel.AddTransactionViewModel
-import com.scitech.accountex.viewmodel.DashboardViewModel
+import com.scitech.accountex.viewmodel.*
 
 class MainActivity : ComponentActivity() {
 
     private val dashboardViewModel: DashboardViewModel by viewModels()
     private val addTransactionViewModel: AddTransactionViewModel by viewModels()
+    private val templateViewModel: TemplateViewModel by viewModels()
+    private val noteTrackingViewModel: NoteTrackingViewModel by viewModels()
+    private val analyticsViewModel: AnalyticsViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         setContent {
             AccountexTheme {
                 Surface(
@@ -35,7 +33,11 @@ class MainActivity : ComponentActivity() {
                 ) {
                     AccountexApp(
                         dashboardViewModel = dashboardViewModel,
-                        addTransactionViewModel = addTransactionViewModel
+                        addTransactionViewModel = addTransactionViewModel,
+                        templateViewModel = templateViewModel,
+                        noteTrackingViewModel = noteTrackingViewModel,
+                        analyticsViewModel = analyticsViewModel,
+                        context = this
                     )
                 }
             }
@@ -43,35 +45,77 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-sealed class Screen {
-    object Dashboard : Screen()
-    object AddTransaction : Screen()
-}
-
 @Composable
 fun AccountexApp(
     dashboardViewModel: DashboardViewModel,
-    addTransactionViewModel: AddTransactionViewModel
+    addTransactionViewModel: AddTransactionViewModel,
+    templateViewModel: TemplateViewModel,
+    noteTrackingViewModel: NoteTrackingViewModel,
+    analyticsViewModel: AnalyticsViewModel,
+    context: android.content.Context
 ) {
     var currentScreen by remember { mutableStateOf<Screen>(Screen.Dashboard) }
+    var selectedTransactionId by remember { mutableIntStateOf(0) }
 
     when (currentScreen) {
         Screen.Dashboard -> {
             DashboardScreen(
                 viewModel = dashboardViewModel,
-                onAddTransactionClick = {
+                onAddTransactionClick = { currentScreen = Screen.AddTransaction },
+                onTemplatesClick = { currentScreen = Screen.Templates },
+                onNoteTrackingClick = { currentScreen = Screen.NoteTracking },
+                onAnalyticsClick = { currentScreen = Screen.Analytics },
+                onTransactionClick = { id ->
+                    selectedTransactionId = id
+                    currentScreen = Screen.TransactionDetail
+                },
+                context = context
+            )
+        }
+        Screen.AddTransaction -> {
+            AddTransactionScreen(
+                viewModel = addTransactionViewModel,
+                templateViewModel = templateViewModel,
+                onNavigateBack = { currentScreen = Screen.Dashboard }
+            )
+        }
+        Screen.Templates -> {
+            TemplatesScreen(
+                viewModel = templateViewModel,
+                onNavigateBack = { currentScreen = Screen.Dashboard },
+                onTemplateSelect = { template ->
+                    addTransactionViewModel.applyTemplate(template)
                     currentScreen = Screen.AddTransaction
                 }
             )
         }
-
-        Screen.AddTransaction -> {
-            AddTransactionScreen(
-                viewModel = addTransactionViewModel,
-                onNavigateBack = {
-                    currentScreen = Screen.Dashboard
-                }
+        Screen.NoteTracking -> {
+            NoteTrackingScreen(
+                viewModel = noteTrackingViewModel,
+                onNavigateBack = { currentScreen = Screen.Dashboard }
+            )
+        }
+        Screen.Analytics -> {
+            AnalyticsScreen(
+                viewModel = analyticsViewModel,
+                onNavigateBack = { currentScreen = Screen.Dashboard }
+            )
+        }
+        Screen.TransactionDetail -> {
+            TransactionDetailScreen(
+                transactionId = selectedTransactionId,
+                viewModel = dashboardViewModel,
+                onNavigateBack = { currentScreen = Screen.Dashboard }
             )
         }
     }
+}
+
+sealed class Screen {
+    object Dashboard : Screen()
+    object AddTransaction : Screen()
+    object Templates : Screen()
+    object NoteTracking : Screen()
+    object Analytics : Screen()
+    object TransactionDetail : Screen()
 }
