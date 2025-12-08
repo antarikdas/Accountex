@@ -1,5 +1,3 @@
-in: com/scitech/accountex/MainActivity.kt
-
 package com.scitech.accountex
 
 import android.os.Bundle
