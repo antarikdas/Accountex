@@ -67,6 +67,7 @@ dependencies {
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material:material-icons-extended")
 
     // Room Database
     implementation("androidx.room:room-runtime:2.6.1")
@@ -87,6 +88,10 @@ dependencies {
 
     // Permissions
     implementation("com.google.accompanist:accompanist-permissions:0.32.0")
+
+    // Apache POI for Excel Export
+    implementation("org.apache.poi:poi:5.2.3")
+    implementation("org.apache.poi:poi-ooxml:5.2.3")
 
     // Testing
     testImplementation("junit:junit:4.13.2")
