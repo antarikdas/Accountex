@@ -18,7 +18,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
 /**
- * Placeholder screen so the project compiles without template logic.
+ * Placeholder screen so the project compiles without the template logic.
  * Not currently used from MainActivity.
  */
 @OptIn(ExperimentalMaterial3Api::class)
