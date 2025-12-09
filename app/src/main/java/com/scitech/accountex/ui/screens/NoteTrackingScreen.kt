@@ -9,6 +9,8 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -18,6 +20,8 @@ import com.scitech.accountex.data.NoteStatus
 import com.scitech.accountex.viewmodel.NoteTrackingViewModel
 import java.text.SimpleDateFormat
 import java.util.*
+import com.scitech.accountex.utils.formatDate
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -176,6 +180,9 @@ fun SearchNoteDialog(
     var searchResult by remember { mutableStateOf<CurrencyNote?>(null) }
     var searched by remember { mutableStateOf(false) }
 
+    // 1. Get the coroutine scope that is aware of the composable's lifecycle
+    val scope = rememberCoroutineScope()
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Search Note") },
@@ -188,7 +195,8 @@ fun SearchNoteDialog(
                 )
                 Button(
                     onClick = {
-                        kotlinx.coroutines.GlobalScope.launch {
+                        // 2. Use the new scope to launch the coroutine
+                        scope.launch {
                             searchResult = viewModel.searchNoteBySerial(searchSerial)
                             searched = true
                         }
@@ -201,6 +209,7 @@ fun SearchNoteDialog(
                     if (searchResult != null) {
                         Text("Found: ₹${searchResult!!.denomination}", fontWeight = FontWeight.Bold)
                         Text("Status: ${searchResult!!.status.name}")
+                        // This should now correctly use the imported formatDate function
                         Text("Received: ${formatDate(searchResult!!.receivedDate)}")
                     } else {
                         Text("Note not found", color = MaterialTheme.colorScheme.error)
@@ -214,7 +223,3 @@ fun SearchNoteDialog(
     )
 }
 
-private fun formatDate(timestamp: Long): String {
-    val sdf = SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
-    return sdf.format(Date(timestamp))
-}

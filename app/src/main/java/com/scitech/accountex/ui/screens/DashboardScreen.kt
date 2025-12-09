@@ -28,6 +28,9 @@ import com.scitech.accountex.viewmodel.DashboardViewModel
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.*
+import com.scitech.accountex.utils.formatDate
+import com.scitech.accountex.utils.formatCurrency
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -272,14 +275,4 @@ fun TransactionItem(transaction: Transaction, onClick: () -> Unit) {
             )
         }
     }
-}
-
-fun formatCurrency(amount: Double): String {
-    val format = NumberFormat.getCurrencyInstance(Locale("en", "IN"))
-    return format.format(amount)
-}
-
-fun formatDate(timestamp: Long): String {
-    val sdf = SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault())
-    return sdf.format(Date(timestamp))
 }
