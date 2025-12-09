@@ -8,6 +8,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.scitech.accountex.data.Transaction
+import com.scitech.accountex.utils.formatCurrency
+import com.scitech.accountex.utils.formatDate
 import com.scitech.accountex.viewmodel.DashboardViewModel
 import kotlinx.coroutines.launch
 
