@@ -73,7 +73,7 @@ fun AccountexApp(
         Screen.AddTransaction -> {
             AddTransactionScreen(
                 viewModel = addTransactionViewModel,
-                TemplateViewModel = templateViewModel,
+
                 onNavigateBack = { currentScreen = Screen.Dashboard }
             )
         }
