@@ -89,9 +89,6 @@ dependencies {
     // Permissions
     implementation("com.google.accompanist:accompanist-permissions:0.32.0")
 
-    // Apache POI for Excel Export
-    implementation("org.apache.poi:poi:5.2.3")
-    implementation("org.apache.poi:poi-ooxml:5.2.3")
 
     // Testing
     testImplementation("junit:junit:4.13.2")
