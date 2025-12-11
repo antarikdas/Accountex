@@ -1,76 +1,59 @@
 package com.scitech.accountex.ui.screens
 
-import android.net.Uri
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
-import com.scitech.accountex.data.Account
 import com.scitech.accountex.data.TransactionType
 import com.scitech.accountex.viewmodel.AddTransactionViewModel
+import com.scitech.accountex.viewmodel.TemplateViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddTransactionScreen(
     viewModel: AddTransactionViewModel,
+    templateViewModel: TemplateViewModel,  // ADDED: Template support
     onNavigateBack: () -> Unit
 ) {
     val accounts by viewModel.accounts.collectAsState()
+    val templates by templateViewModel.templates.collectAsState()
+    val appliedTemplate by viewModel.appliedTemplate.collectAsState()
 
     var selectedType by remember { mutableStateOf(TransactionType.EXPENSE) }
     var amount by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
-    var selectedAccount by remember { mutableStateOf<Account?>(null) }
-    var accountMenuExpanded by remember { mutableStateOf(false) }
+    var selectedAccountId by remember { mutableIntStateOf(0) }
+    var showAccountDropdown by remember { mutableStateOf(false) }
 
-    // Multi-image state
-    var selectedImageUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
+    // Handle back button
+    BackHandler {
+        onNavigateBack()
+    }
 
-    val photoPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickMultipleVisualMedia()
-    ) { uris ->
-        if (!uris.isNullOrEmpty()) {
-            val current = selectedImageUris.toMutableList()
-            current.addAll(uris)
-            selectedImageUris = current.distinct()
+    // Apply template when selected
+    LaunchedEffect(appliedTemplate) {
+        appliedTemplate?.let { template ->
+            amount = template.defaultAmount.toString()
+            category = template.category
+            selectedAccountId = template.accountId
         }
     }
 
-    BackHandler {
-        onNavigateBack()
+    // Set default account when accounts load
+    LaunchedEffect(accounts) {
+        if (selectedAccountId == 0 && accounts.isNotEmpty()) {
+            selectedAccountId = accounts.first().id
+        }
     }
 
     Scaffold(
@@ -98,7 +81,34 @@ fun AddTransactionScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // TYPE
+            // Quick Templates Section (NEW)
+            if (templates.isNotEmpty()) {
+                Text(
+                    "Quick Templates",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(templates.take(5)) { template ->
+                        FilterChip(
+                            selected = false,
+                            onClick = {
+                                amount = template.defaultAmount.toString()
+                                category = template.category
+                                selectedAccountId = template.accountId
+                            },
+                            label = {
+                                Text("${template.name} ₹${template.defaultAmount.toInt()}")
+                            }
+                        )
+                    }
+                }
+            }
+
+            // Transaction Type Selector
             Text(
                 "Transaction Type",
                 style = MaterialTheme.typography.titleMedium,
@@ -129,7 +139,7 @@ fun AddTransactionScreen(
                 )
             }
 
-            // AMOUNT
+            // Amount Input
             OutlinedTextField(
                 value = amount,
                 onValueChange = { amount = it },
@@ -141,7 +151,7 @@ fun AddTransactionScreen(
                 singleLine = true
             )
 
-            // CATEGORY
+            // Category Input
             OutlinedTextField(
                 value = category,
                 onValueChange = { category = it },
@@ -151,7 +161,7 @@ fun AddTransactionScreen(
                 singleLine = true
             )
 
-            // DESCRIPTION
+            // Description Input
             OutlinedTextField(
                 value = description,
                 onValueChange = { description = it },
@@ -162,7 +172,7 @@ fun AddTransactionScreen(
                 maxLines = 4
             )
 
-            // ACCOUNT DROPDOWN
+            // Account Selector
             Text(
                 "Account",
                 style = MaterialTheme.typography.titleMedium,
@@ -170,25 +180,23 @@ fun AddTransactionScreen(
             )
 
             ExposedDropdownMenuBox(
-                expanded = accountMenuExpanded,
-                onExpandedChange = { accountMenuExpanded = !accountMenuExpanded }
+                expanded = showAccountDropdown,
+                onExpandedChange = { showAccountDropdown = it }
             ) {
                 OutlinedTextField(
-                    value = selectedAccount?.name ?: "Select Account",
+                    value = accounts.find { it.id == selectedAccountId }?.name ?: "Select Account",
                     onValueChange = {},
                     readOnly = true,
-                    trailingIcon = {
-                        ExposedDropdownMenuDefaults.TrailingIcon(expanded = accountMenuExpanded)
-                    },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = showAccountDropdown) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .menuAnchor(),
                     colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors()
                 )
 
-                DropdownMenu(
-                    expanded = accountMenuExpanded,
-                    onDismissRequest = { accountMenuExpanded = false }
+                ExposedDropdownMenu(
+                    expanded = showAccountDropdown,
+                    onDismissRequest = { showAccountDropdown = false }
                 ) {
                     accounts.forEach { account ->
                         DropdownMenuItem(
@@ -196,103 +204,57 @@ fun AddTransactionScreen(
                                 Column {
                                     Text(account.name, fontWeight = FontWeight.Medium)
                                     Text(
-                                        "Balance: ${formatCurrency(account.balance)}",
+                                        "Balance: ₹${account.balance}",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                                     )
                                 }
                             },
                             onClick = {
-                                selectedAccount = account
-                                accountMenuExpanded = false
+                                selectedAccountId = account.id
+                                showAccountDropdown = false
                             }
                         )
                     }
                 }
             }
 
-            // IMAGES
-            Text(
-                "Bill / Receipt Images (optional)",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-
+            // Save as Template Button (NEW)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Button(
+                OutlinedButton(
                     onClick = {
-                        photoPickerLauncher.launch(
-                            PickVisualMediaRequest(
-                                ActivityResultContracts.PickVisualMedia.ImageOnly
-                            )
-                        )
-                    }
-                ) {
-                    Text("Attach Images")
-                }
-
-                if (selectedImageUris.isNotEmpty()) {
-                    Text(
-                        "${selectedImageUris.size} image(s) selected",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                }
-            }
-
-            if (selectedImageUris.isNotEmpty()) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    selectedImageUris.forEach { uri ->
-                        Card(
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceVariant
-                            )
-                        ) {
-                            AsyncImage(
-                                model = uri,
-                                contentDescription = "Selected bill image",
-                                modifier = Modifier
-                                    .width(120.dp)
-                                    .height(120.dp)
+                        if (amount.isNotBlank() && category.isNotBlank()) {
+                            templateViewModel.saveAsTemplate(
+                                name = category,
+                                category = category,
+                                defaultAmount = amount.toDoubleOrNull() ?: 0.0,
+                                accountId = selectedAccountId
                             )
                         }
-                    }
+                    },
+                    modifier = Modifier.weight(1f),
+                    enabled = amount.isNotBlank() && category.isNotBlank()
+                ) {
+                    Text("Save as Template")
                 }
             }
 
-            // SAVE BUTTON
-            val amountDouble = amount.toDoubleOrNull()
-            val isValid =
-                amountDouble != null &&
-                        amountDouble > 0.0 &&
-                        category.isNotBlank() &&
-                        selectedAccount != null
+            Spacer(modifier = Modifier.height(8.dp))
 
+            // Save Transaction Button
             Button(
                 onClick = {
-                    if (amountDouble != null && selectedAccount != null) {
-
-                        val imageUriCombined: String? =
-                            if (selectedImageUris.isNotEmpty()) {
-                                selectedImageUris.joinToString("|") { it.toString() }
-                            } else {
-                                null
-                            }
-
+                    val amountValue = amount.toDoubleOrNull()
+                    if (amountValue != null && amountValue > 0 && category.isNotBlank() && selectedAccountId != 0) {
                         viewModel.addTransaction(
                             type = selectedType,
-                            amount = amountDouble,
+                            amount = amountValue,
                             category = category.trim(),
                             description = description.trim(),
-                            accountId = selectedAccount!!.id,
-                            imageUri = imageUriCombined
+                            accountId = selectedAccountId
                         )
                         onNavigateBack()
                     }
@@ -300,7 +262,10 @@ fun AddTransactionScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
-                enabled = isValid
+                enabled = amount.toDoubleOrNull() != null &&
+                        amount.toDoubleOrNull()!! > 0 &&
+                        category.isNotBlank() &&
+                        selectedAccountId != 0
             ) {
                 Text(
                     "Save Transaction",
@@ -308,6 +273,11 @@ fun AddTransactionScreen(
                     fontWeight = FontWeight.Bold
                 )
             }
+
+            // NOTE: If you have image attachment functionality,
+            // add it here in the same column, before the Save button
+            // Example:
+            // ImageAttachmentSection(...)
         }
     }
 }
