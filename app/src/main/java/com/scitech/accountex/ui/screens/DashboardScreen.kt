@@ -18,19 +18,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.scitech.accountex.data.Transaction
 import com.scitech.accountex.data.TransactionType
-import com.scitech.accountex.viewmodel.DashboardViewModel
-import java.text.NumberFormat
-import java.text.SimpleDateFormat
-import java.util.*
-import com.scitech.accountex.utils.formatDate
 import com.scitech.accountex.utils.formatCurrency
-
+import com.scitech.accountex.utils.formatDate
+import com.scitech.accountex.viewmodel.DashboardViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -84,26 +79,41 @@ fun DashboardScreen(
                     IconButton(onClick = { showMenu = true }) {
                         Icon(Icons.Default.MoreVert, "Menu")
                     }
-                    DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                    DropdownMenu(
+                        expanded = showMenu,
+                        onDismissRequest = { showMenu = false }
+                    ) {
                         DropdownMenuItem(
                             text = { Text("Templates") },
-                            onClick = { showMenu = false; onTemplatesClick() },
+                            onClick = {
+                                showMenu = false
+                                onTemplatesClick()
+                            },
                             leadingIcon = { Icon(Icons.Default.Star, null) }
                         )
                         DropdownMenuItem(
                             text = { Text("Note Tracking") },
-                            onClick = { showMenu = false; onNoteTrackingClick() },
+                            onClick = {
+                                showMenu = false
+                                onNoteTrackingClick()
+                            },
                             leadingIcon = { Icon(Icons.Default.Phone, null) }
                         )
                         DropdownMenuItem(
                             text = { Text("Analytics") },
-                            onClick = { showMenu = false; onAnalyticsClick() },
+                            onClick = {
+                                showMenu = false
+                                onAnalyticsClick()
+                            },
                             leadingIcon = { Icon(Icons.Default.Info, null) }
                         )
                         HorizontalDivider()
                         DropdownMenuItem(
                             text = { Text("Export to Excel") },
-                            onClick = { showMenu = false; requestExport() },
+                            onClick = {
+                                showMenu = false
+                                requestExport()
+                            },
                             leadingIcon = { Icon(Icons.Default.Share, null) }
                         )
                     }
@@ -120,61 +130,117 @@ fun DashboardScreen(
                 onClick = onAddTransactionClick,
                 containerColor = MaterialTheme.colorScheme.primary
             ) {
-                Icon(Icons.Default.Add, "Add", tint = MaterialTheme.colorScheme.onPrimary)
+                Icon(Icons.Default.Add, "Add Transaction", tint = MaterialTheme.colorScheme.onPrimary)
             }
         }
     ) { paddingValues ->
         LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(paddingValues).padding(16.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                    )
                 ) {
-                    Column(modifier = Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Total Balance", style = MaterialTheme.typography.titleMedium)
+                    Column(
+                        modifier = Modifier.padding(20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            "Total Balance",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             formatCurrency(viewModel.getTotalBalance()),
                             style = MaterialTheme.typography.headlineLarge,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                     }
                 }
             }
 
             item {
-                Text("Quick Actions", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text(
+                    "Quick Actions",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
             }
 
             item {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    item { QuickActionCard(Icons.Default.Star, "Templates", onTemplatesClick) }
-                    item { QuickActionCard(Icons.Default.Phone, "Notes", onNoteTrackingClick) }
-                    item { QuickActionCard(Icons.Default.Info, "Analytics", onAnalyticsClick) }
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    item {
+                        QuickActionCard(
+                            icon = Icons.Default.Star,
+                            label = "Templates",
+                            onClick = onTemplatesClick
+                        )
+                    }
+                    item {
+                        QuickActionCard(
+                            icon = Icons.Default.Phone,
+                            label = "Notes",
+                            onClick = onNoteTrackingClick
+                        )
+                    }
+                    item {
+                        QuickActionCard(
+                            icon = Icons.Default.Info,
+                            label = "Analytics",
+                            onClick = onAnalyticsClick
+                        )
+                    }
                 }
             }
 
             item {
-                Text("Accounts", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text(
+                    "Accounts",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
             }
 
-            items(accounts) { account -> AccountCard(account) }
-
-            item {
-                Text("Today's Summary", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            items(accounts) { account ->
+                AccountCard(account)
             }
 
-            item { TodaySummaryCard(todaySummary) }
+            item {
+                Text(
+                    "Today's Summary",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+            }
 
             item {
-                Text("Recent Transactions", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                TodaySummaryCard(todaySummary)
+            }
+
+            item {
+                Text(
+                    "Recent Transactions",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
             }
 
             items(transactions.take(10)) { transaction ->
-                TransactionItem(transaction) { onTransactionClick(transaction.id) }
+                TransactionItem(
+                    transaction = transaction,
+                    onClick = { onTransactionClick(transaction.id) }
+                )
             }
         }
     }
@@ -188,12 +254,26 @@ fun QuickActionCard(
 ) {
     Card(
         onClick = onClick,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer
+        )
     ) {
-        Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(icon, label, modifier = Modifier.size(32.dp))
+        Column(
+            modifier = Modifier.padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(
+                icon,
+                contentDescription = label,
+                modifier = Modifier.size(32.dp),
+                tint = MaterialTheme.colorScheme.onSecondaryContainer
+            )
             Spacer(modifier = Modifier.height(8.dp))
-            Text(label, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSecondaryContainer
+            )
         }
     }
 }
@@ -202,22 +282,37 @@ fun QuickActionCard(
 fun AccountCard(account: com.scitech.accountex.data.Account) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column {
-                Text(account.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                Text(account.type.name.replace("_", " "), style = MaterialTheme.typography.bodySmall)
+                Text(
+                    account.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    account.type.name.replace("_", " "),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                )
             }
             Text(
                 formatCurrency(account.balance),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
-                color = if (account.balance >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                color = if (account.balance >= 0)
+                    MaterialTheme.colorScheme.primary
+                else
+                    MaterialTheme.colorScheme.error
             )
         }
     }
@@ -227,7 +322,9 @@ fun AccountCard(account: com.scitech.accountex.data.Account) {
 fun TodaySummaryCard(summary: com.scitech.accountex.viewmodel.DailySummary) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer
+        )
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             SummaryRow("Income", summary.income, true)
@@ -241,37 +338,73 @@ fun TodaySummaryCard(summary: com.scitech.accountex.viewmodel.DailySummary) {
 
 @Composable
 fun SummaryRow(label: String, amount: Double, isPositive: Boolean) {
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(label, style = MaterialTheme.typography.bodyLarge)
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodyLarge
+        )
         Text(
             formatCurrency(amount),
             style = MaterialTheme.typography.bodyLarge,
             fontWeight = FontWeight.Bold,
-            color = if (isPositive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+            color = if (isPositive)
+                MaterialTheme.colorScheme.primary
+            else
+                MaterialTheme.colorScheme.error
         )
     }
 }
 
 @Composable
-fun TransactionItem(transaction: Transaction, onClick: () -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+fun TransactionItem(
+    transaction: Transaction,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        )
+    ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(transaction.category, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                Text(
+                    transaction.category,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
                 if (transaction.description.isNotEmpty()) {
-                    Text(transaction.description, style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        transaction.description,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    )
                 }
-                Text(formatDate(transaction.date), style = MaterialTheme.typography.bodySmall)
+                Text(
+                    formatDate(transaction.date),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                )
             }
             Text(
                 "${if (transaction.type == TransactionType.EXPENSE) "-" else "+"}${formatCurrency(transaction.amount)}",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                color = if (transaction.type == TransactionType.EXPENSE) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                color = if (transaction.type == TransactionType.EXPENSE)
+                    MaterialTheme.colorScheme.error
+                else
+                    MaterialTheme.colorScheme.primary
             )
         }
     }
