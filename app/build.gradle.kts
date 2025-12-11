@@ -89,8 +89,9 @@ dependencies {
     // Permissions
     implementation("com.google.accompanist:accompanist-permissions:0.32.0")
 
-    // Added FastExcel
-    implementation("org.dhatim:fastexcel:0.1.7")
+    // FastExcel for Excel export
+    implementation("org.dhatim:fastexcel:0.15.7")
+    implementation("org.dhatim:fastexcel-reader:0.15.7")
 
     // Testing
     testImplementation("junit:junit:4.13.2")
