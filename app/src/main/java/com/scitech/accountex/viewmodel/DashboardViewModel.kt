@@ -1,20 +1,15 @@
 package com.scitech.accountex.viewmodel
 
 import android.app.Application
-import android.content.Context
 import android.content.Intent
 import android.os.Environment
 import androidx.core.content.FileProvider
-import androidx.core.text.bold
-import androidx.glance.layout.width
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.slice.builders.range
 import com.scitech.accountex.data.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import org.dhatim.fastexcel.Workbook
-import org.dhatim.fastexcel.Worksheet
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
@@ -74,30 +69,28 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     fun exportToExcel() {
         viewModelScope.launch {
             try {
-                // Define where the file will be saved
                 val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
                 val fileName = "Accountex_Export_${System.currentTimeMillis()}.xlsx"
                 val file = File(downloadsDir, fileName)
 
                 FileOutputStream(file).use { outputStream ->
-                    // Use FastExcel to create the workbook and worksheet
                     val workbook = Workbook(outputStream, "Accountex", "1.0")
-                    val worksheet: Worksheet = workbook.newWorksheet("Transactions")
+                    val worksheet = workbook.newWorksheet("Transactions")
 
-                    // --- Create and Style the Header Row ---
+                    // Header row
                     val headers = listOf("Date", "Type", "Category", "Amount", "Account", "Description")
-                    worksheet.range(0, 0, 0, headers.size - 1).style().bold().set()
-
                     headers.forEachIndexed { index, header ->
                         worksheet.value(0, index, header)
-                        // Set column widths for better readability
-                        worksheet.width(index, 20)
+                        worksheet.width(index, 20.0)
                     }
 
-                    // --- Populate Data Rows ---
+                    // Style header
+                    worksheet.range(0, 0, 0, headers.size - 1).style().bold().set()
+
+                    // Data rows
                     val sdf = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
                     transactions.value.forEachIndexed { index, transaction ->
-                        val row = index + 1 // Data starts on the second row
+                        val row = index + 1
                         val account = accounts.value.find { it.id == transaction.accountId }
 
                         worksheet.value(row, 0, sdf.format(Date(transaction.date)))
@@ -108,14 +101,11 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                         worksheet.value(row, 5, transaction.description)
                     }
 
-                    // Finish writing the workbook
                     workbook.finish()
                 }
 
-                // Share the created file
                 shareFile(file)
             } catch (e: Exception) {
-                // Log the exception to understand what went wrong
                 e.printStackTrace()
             }
         }
@@ -123,10 +113,9 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
     private fun shareFile(file: File) {
         val context = getApplication<Application>()
-        // Get a content URI using FileProvider for security
         val uri = FileProvider.getUriForFile(
             context,
-            "${context.packageName}.fileprovider", // Make sure this matches your provider_paths.xml authority
+            "${context.packageName}.fileprovider",
             file
         )
 
@@ -137,9 +126,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
 
-        // Use a chooser to let the user decide how to share
-        val chooser = Intent.createChooser(intent, "Share Excel File").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        context.startActivity(chooser)
+        context.startActivity(Intent.createChooser(intent, "Share Excel File").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 }
 
