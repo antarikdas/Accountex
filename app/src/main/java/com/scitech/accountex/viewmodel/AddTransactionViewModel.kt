@@ -16,6 +16,7 @@ class AddTransactionViewModel(application: Application) : AndroidViewModel(appli
     val accounts: StateFlow<List<Account>> = accountDao.getAllAccounts()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    // IMPORTANT: Make sure you have this
     private val _appliedTemplate = MutableStateFlow<TransactionTemplate?>(null)
     val appliedTemplate: StateFlow<TransactionTemplate?> = _appliedTemplate.asStateFlow()
 
@@ -49,6 +50,7 @@ class AddTransactionViewModel(application: Application) : AndroidViewModel(appli
         }
     }
 
+    // IMPORTANT: Make sure you have this method
     fun applyTemplate(template: TransactionTemplate) {
         _appliedTemplate.value = template
     }
