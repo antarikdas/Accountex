@@ -32,6 +32,8 @@ fun AddTransactionScreen(
     var amount by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
+    var noteSerials by remember { mutableStateOf("") }
+    var showNoteInput by remember { mutableStateOf(false) }
     var selectedAccountId by remember { mutableIntStateOf(0) }
     var showAccountDropdown by remember { mutableStateOf(false) }
 
@@ -141,6 +143,7 @@ fun AddTransactionScreen(
 
             // Amount Input
             OutlinedTextField(
+
                 value = amount,
                 onValueChange = { amount = it },
                 label = { Text("Amount") },
@@ -150,7 +153,29 @@ fun AddTransactionScreen(
                 prefix = { Text("₹ ") },
                 singleLine = true
             )
+// Note input for INCOME
+            if (selectedType == TransactionType.INCOME) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Track Note Numbers", style = MaterialTheme.typography.bodyMedium)
+                    Switch(checked = showNoteInput, onCheckedChange = { showNoteInput = it })
+                }
 
+                if (showNoteInput) {
+                    OutlinedTextField(
+                        value = noteSerials,
+                        onValueChange = { noteSerials = it },
+                        label = { Text("Note Serial Numbers") },
+                        placeholder = { Text("Enter serials (comma or new line separated)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 3,
+                        maxLines = 5
+                    )
+                }
+            }
             // Category Input
             OutlinedTextField(
                 value = category,
@@ -254,7 +279,8 @@ fun AddTransactionScreen(
                             amount = amountValue,
                             category = category.trim(),
                             description = description.trim(),
-                            accountId = selectedAccountId
+                            accountId = selectedAccountId,
+                            noteSerials = if (selectedType == TransactionType.INCOME) noteSerials else ""
                         )
                         onNavigateBack()
                     }
