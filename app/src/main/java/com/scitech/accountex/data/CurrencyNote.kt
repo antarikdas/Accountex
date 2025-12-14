@@ -9,15 +9,9 @@ data class CurrencyNote(
     val id: Int = 0,
     val serialNumber: String,
     val denomination: Int,
-    val status: NoteStatus,
-    val receivedDate: Long,
-    val spentDate: Long? = null,
+    val accountId: Int,
     val receivedTransactionId: Int,
     val spentTransactionId: Int? = null,
-    val accountId: Int
+    val receivedDate: Long,
+    val spentDate: Long? = null
 )
-
-enum class NoteStatus {
-    ACTIVE,
-    SPENT
-}

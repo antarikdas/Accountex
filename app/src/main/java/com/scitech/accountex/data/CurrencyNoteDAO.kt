@@ -5,30 +5,18 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface CurrencyNoteDao {
-    @Query("SELECT * FROM currency_notes WHERE status = 'ACTIVE' ORDER BY denomination DESC")
-    fun getAllActiveNotes(): Flow<List<CurrencyNote>>
-
-    @Query("SELECT * FROM currency_notes WHERE accountId = :accountId AND status = 'ACTIVE' ORDER BY denomination DESC")
+    @Query("SELECT * FROM currency_notes WHERE spentTransactionId IS NULL AND accountId = :accountId ORDER BY denomination DESC")
     fun getActiveNotesByAccount(accountId: Int): Flow<List<CurrencyNote>>
 
-    @Query("SELECT * FROM currency_notes WHERE serialNumber = :serialNumber")
-    suspend fun getNoteBySerialNumber(serialNumber: String): CurrencyNote?
+    @Query("SELECT * FROM currency_notes WHERE serialNumber = :serial")
+    suspend fun getNoteBySerial(serial: String): CurrencyNote?
 
-    @Query("SELECT * FROM currency_notes WHERE id = :id")
-    suspend fun getNoteById(id: Int): CurrencyNote?
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Insert
     suspend fun insertNote(note: CurrencyNote)
 
-    @Update
-    suspend fun updateNote(note: CurrencyNote)
+    @Query("UPDATE currency_notes SET spentTransactionId = :txId, spentDate = :date WHERE id = :noteId")
+    suspend fun markAsSpent(noteId: Int, txId: Int, date: Long)
 
-    @Delete
-    suspend fun deleteNote(note: CurrencyNote)
-
-    @Query("UPDATE currency_notes SET status = 'SPENT', spentDate = :spentDate, spentTransactionId = :transactionId WHERE id = :noteId")
-    suspend fun markNoteAsSpent(noteId: Int, spentDate: Long, transactionId: Int)
-
-    @Query("SELECT SUM(denomination) FROM currency_notes WHERE accountId = :accountId AND status = 'ACTIVE'")
-    suspend fun getTotalActiveAmount(accountId: Int): Int?
+    @Query("SELECT * FROM currency_notes WHERE receivedTransactionId = :txId OR spentTransactionId = :txId")
+    fun getNotesByTransaction(txId: Int): Flow<List<CurrencyNote>>
 }
