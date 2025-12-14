@@ -13,7 +13,11 @@ class AddTransactionViewModel(application: Application) : AndroidViewModel(appli
     private val accountDao = database.accountDao()
     private val transactionDao = database.transactionDao()
     private val noteDao = database.currencyNoteDao()
+    private val _availableNotes = MutableStateFlow<List<CurrencyNote>>(emptyList())
+    val availableNotes: StateFlow<List<CurrencyNote>> = _availableNotes.asStateFlow()
 
+    private val _selectedNoteIds = MutableStateFlow<Set<Int>>(emptySet())
+    val selectedNoteIds: StateFlow<Set<Int>> = _selectedNoteIds.asStateFlow()
     val accounts: StateFlow<List<Account>> = accountDao.getAllAccounts()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -66,11 +70,38 @@ class AddTransactionViewModel(application: Application) : AndroidViewModel(appli
                 TransactionType.EXPENSE -> -amount
                 TransactionType.TRANSFER -> 0.0
             }
+            // Mark notes as spent if expense
+            if (type == TransactionType.EXPENSE && _selectedNoteIds.value.isNotEmpty()) {
+                _selectedNoteIds.value.forEach { noteId ->
+                    noteDao.markAsSpent(noteId, txId, System.currentTimeMillis())
+                }
+                clearNoteSelection()
+            }
 
             accountDao.updateBalance(accountId, balanceChange)
             _appliedTemplate.value = null
         }
-    }
+        fun loadNotesForAccount(accountId: Int) {
+            viewModelScope.launch {
+                noteDao.getActiveNotesByAccount(accountId).collect { notes ->
+                    _availableNotes.value = notes
+                }
+            }
+        }
+
+        fun toggleNoteSelection(noteId: Int) {
+            val current = _selectedNoteIds.value.toMutableSet()
+            if (current.contains(noteId)) {
+                current.remove(noteId)
+            } else {
+                current.add(noteId)
+            }
+            _selectedNoteIds.value = current
+        }
+
+        fun clearNoteSelection() {
+            _selectedNoteIds.value = emptySet()
+        }}
 
     // IMPORTANT: Make sure you have this method
     fun applyTemplate(template: TransactionTemplate) {

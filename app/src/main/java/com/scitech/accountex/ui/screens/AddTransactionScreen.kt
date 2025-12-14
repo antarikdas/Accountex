@@ -34,6 +34,9 @@ fun AddTransactionScreen(
     var description by remember { mutableStateOf("") }
     var noteSerials by remember { mutableStateOf("") }
     var showNoteInput by remember { mutableStateOf(false) }
+    var showNoteSelector by remember { mutableStateOf(false) }
+    val availableNotes by viewModel.availableNotes.collectAsState()
+    val selectedNoteIds by viewModel.selectedNoteIds.collectAsState()
     var selectedAccountId by remember { mutableIntStateOf(0) }
     var showAccountDropdown by remember { mutableStateOf(false) }
 
@@ -174,6 +177,47 @@ fun AddTransactionScreen(
                         minLines = 3,
                         maxLines = 5
                     )
+                }
+            }
+            // Note selector for EXPENSE
+            if (selectedType == TransactionType.EXPENSE && selectedAccountId != 0) {
+                LaunchedEffect(selectedAccountId) {
+                    viewModel.loadNotesForAccount(selectedAccountId)
+                }
+
+                if (availableNotes.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Select Notes to Spend (${selectedNoteIds.size})", style = MaterialTheme.typography.bodyMedium)
+                        TextButton(onClick = { showNoteSelector = !showNoteSelector }) {
+                            Text(if (showNoteSelector) "Hide" else "Show")
+                        }
+                    }
+
+                    if (showNoteSelector) {
+                        Card(modifier = Modifier.fillMaxWidth()) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                availableNotes.groupBy { it.denomination }.forEach { (denom, notes) ->
+                                    Text("₹$denom (${notes.size})", fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 4.dp))
+                                    notes.forEach { note ->
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Checkbox(
+                                                checked = selectedNoteIds.contains(note.id),
+                                                onCheckedChange = { viewModel.toggleNoteSelection(note.id) }
+                                            )
+                                            Text(note.serialNumber, style = MaterialTheme.typography.bodySmall)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
             // Category Input
