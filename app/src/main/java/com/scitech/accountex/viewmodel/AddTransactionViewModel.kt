@@ -50,11 +50,11 @@ class AddTransactionViewModel(application: Application) : AndroidViewModel(appli
                     noteSerials.split(Regex("[,\n]")).map { it.trim() }.filter { it.isNotEmpty() }
                 serials.forEach { serial ->
                     // Extract denomination from serial (last 3 digits typically)
-                    val denom = serial.takeLast(3).toIntOrNull() ?: 500
                     noteDao.insertNote(
                         CurrencyNote(
                             serialNumber = serial,
-                            denomination = denom,
+                            amount = amountValue,
+                            denomination = 500,  // or ask user
                             accountId = accountId,
                             receivedTransactionId = txId,
                             receivedDate = System.currentTimeMillis()
@@ -75,7 +75,7 @@ class AddTransactionViewModel(application: Application) : AndroidViewModel(appli
                 _selectedNoteIds.value.forEach { noteId ->
                     noteDao.markAsSpent(noteId, txId, System.currentTimeMillis())
                 }
-                clearNoteSelection() // This will now work correctly
+                clearNoteSelection()
             }
 
             accountDao.updateBalance(accountId, balanceChange)

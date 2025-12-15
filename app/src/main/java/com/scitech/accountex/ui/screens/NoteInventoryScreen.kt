@@ -67,9 +67,8 @@ fun NoteInventoryScreen(
             if (selectedAccountId != 0) {
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Total Notes: ${activeNotes.size}", fontWeight = FontWeight.Bold)
-                        Text("Total Value: ₹${activeNotes.sumOf { it.denomination }}", style = MaterialTheme.typography.headlineSmall)
-                    }
+                        Text("Active Notes: ${activeNotes.size}", fontWeight = FontWeight.Bold)
+                        Text("Total Value: ₹${activeNotes.sumOf { it.amount.toInt() }}")                    }
                 }
 
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -85,8 +84,7 @@ fun NoteInventoryScreen(
                                         Text(note.serialNumber, fontWeight = FontWeight.Medium)
                                         Text("Received: ${formatDate(note.receivedDate)}", style = MaterialTheme.typography.bodySmall)
                                     }
-                                    Text("₹${note.denomination}", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
-                                }
+                                    Text("₹${note.amount.toInt()}", style = MaterialTheme.typography.titleLarge)                                }
                             }
                         }
                     }

@@ -18,7 +18,6 @@ class MainActivity : ComponentActivity() {
     private val dashboardViewModel: DashboardViewModel by viewModels()
     private val addTransactionViewModel: AddTransactionViewModel by viewModels()
     private val templateViewModel: TemplateViewModel by viewModels()
-    private val noteTrackingViewModel: NoteTrackingViewModel by viewModels()
     private val analyticsViewModel: AnalyticsViewModel by viewModels()
     private val noteInventoryViewModel: NoteInventoryViewModel by viewModels()
 
@@ -34,7 +33,6 @@ class MainActivity : ComponentActivity() {
                         dashboardViewModel = dashboardViewModel,
                         addTransactionViewModel = addTransactionViewModel,
                         templateViewModel = templateViewModel,
-                        noteTrackingViewModel = noteTrackingViewModel,
                         analyticsViewModel = analyticsViewModel,
                         noteInventoryViewModel = noteInventoryViewModel,
                         context = this
@@ -50,7 +48,6 @@ fun AccountexApp(
     dashboardViewModel: DashboardViewModel,
     addTransactionViewModel: AddTransactionViewModel,
     templateViewModel: TemplateViewModel,
-    noteTrackingViewModel: NoteTrackingViewModel,
     analyticsViewModel: AnalyticsViewModel,
     noteInventoryViewModel: NoteInventoryViewModel,
     context: android.content.Context
@@ -64,7 +61,6 @@ fun AccountexApp(
                 viewModel = dashboardViewModel,
                 onAddTransactionClick = { currentScreen = Screen.AddTransaction },
                 onTemplatesClick = { currentScreen = Screen.Templates },
-                onNoteTrackingClick = { currentScreen = Screen.NoteTracking },
                 onAnalyticsClick = { currentScreen = Screen.Analytics },
                 onNoteInventoryClick = { currentScreen = Screen.NoteInventory },
                 onTransactionClick = { id ->
@@ -91,12 +87,7 @@ fun AccountexApp(
                 }
             )
         }
-        Screen.NoteTracking -> {
-            NoteTrackingScreen(
-                viewModel = noteTrackingViewModel,
-                onNavigateBack = { currentScreen = Screen.Dashboard }
-            )
-        }
+
         Screen.Analytics -> {
             AnalyticsScreen(
                 viewModel = analyticsViewModel,
@@ -123,7 +114,6 @@ sealed class Screen {
     object Dashboard : Screen()
     object AddTransaction : Screen()
     object Templates : Screen()
-    object NoteTracking : Screen()
     object Analytics : Screen()
     object TransactionDetail : Screen()
 

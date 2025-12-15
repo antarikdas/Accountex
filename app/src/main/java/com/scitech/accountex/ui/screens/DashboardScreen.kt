@@ -33,7 +33,6 @@ fun DashboardScreen(
     viewModel: DashboardViewModel,
     onAddTransactionClick: () -> Unit,
     onTemplatesClick: () -> Unit,
-    onNoteTrackingClick: () -> Unit,
     onAnalyticsClick: () -> Unit,
     onNoteInventoryClick: () -> Unit,
     onTransactionClick: (Int) -> Unit,
@@ -92,14 +91,7 @@ fun DashboardScreen(
                             },
                             leadingIcon = { Icon(Icons.Default.Star, null) }
                         )
-                        DropdownMenuItem(
-                            text = { Text("Note Tracking") },
-                            onClick = {
-                                showMenu = false
-                                onNoteTrackingClick()
-                            },
-                            leadingIcon = { Icon(Icons.Default.Phone, null) }
-                        )
+
                         DropdownMenuItem(
                             text = { Text("Analytics") },
                             onClick = {
@@ -200,7 +192,7 @@ fun DashboardScreen(
                         QuickActionCard(
                             icon = Icons.Default.Phone,
                             label = "Notes",
-                            onClick = onNoteTrackingClick
+                            onClick = onNoteInventoryClick
                         )
                     }
                     item {

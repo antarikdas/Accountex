@@ -8,6 +8,7 @@ data class CurrencyNote(
     @PrimaryKey(autoGenerate = true)
     val id: Int = 0,
     val serialNumber: String,
+    val amount: Double,
     val denomination: Int,
     val accountId: Int,
     val receivedTransactionId: Int,
