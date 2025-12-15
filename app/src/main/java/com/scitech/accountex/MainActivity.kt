@@ -20,6 +20,7 @@ class MainActivity : ComponentActivity() {
     private val templateViewModel: TemplateViewModel by viewModels()
     private val noteTrackingViewModel: NoteTrackingViewModel by viewModels()
     private val analyticsViewModel: AnalyticsViewModel by viewModels()
+    private val noteInventoryViewModel: NoteInventoryViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -35,6 +36,7 @@ class MainActivity : ComponentActivity() {
                         templateViewModel = templateViewModel,
                         noteTrackingViewModel = noteTrackingViewModel,
                         analyticsViewModel = analyticsViewModel,
+                        noteInventoryViewModel = noteInventoryViewModel,
                         context = this
                     )
                 }
@@ -50,6 +52,7 @@ fun AccountexApp(
     templateViewModel: TemplateViewModel,
     noteTrackingViewModel: NoteTrackingViewModel,
     analyticsViewModel: AnalyticsViewModel,
+    noteInventoryViewModel: NoteInventoryViewModel,
     context: android.content.Context
 ) {
     var currentScreen by remember { mutableStateOf<Screen>(Screen.Dashboard) }
@@ -63,6 +66,7 @@ fun AccountexApp(
                 onTemplatesClick = { currentScreen = Screen.Templates },
                 onNoteTrackingClick = { currentScreen = Screen.NoteTracking },
                 onAnalyticsClick = { currentScreen = Screen.Analytics },
+                onNoteInventoryClick = { currentScreen = Screen.NoteInventory },
                 onTransactionClick = { id ->
                     selectedTransactionId = id
                     currentScreen = Screen.TransactionDetail
@@ -106,6 +110,12 @@ fun AccountexApp(
                 onNavigateBack = { currentScreen = Screen.Dashboard }
             )
         }
+        Screen.NoteInventory -> {
+            NoteInventoryScreen(
+                viewModel = noteInventoryViewModel,
+                onNavigateBack = { currentScreen = Screen.Dashboard }
+            )
+        }
     }
 }
 
@@ -116,4 +126,6 @@ sealed class Screen {
     object NoteTracking : Screen()
     object Analytics : Screen()
     object TransactionDetail : Screen()
+
+    object NoteInventory : Screen()
 }

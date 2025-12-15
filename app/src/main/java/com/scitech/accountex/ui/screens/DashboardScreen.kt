@@ -35,6 +35,7 @@ fun DashboardScreen(
     onTemplatesClick: () -> Unit,
     onNoteTrackingClick: () -> Unit,
     onAnalyticsClick: () -> Unit,
+    onNoteInventoryClick: () -> Unit,
     onTransactionClick: (Int) -> Unit,
     context: Context
 ) {
@@ -106,6 +107,14 @@ fun DashboardScreen(
                                 onAnalyticsClick()
                             },
                             leadingIcon = { Icon(Icons.Default.Info, null) }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Note Inventory") },
+                            onClick = {
+                                showMenu = false
+                                onNoteInventoryClick()
+                            },
+                            leadingIcon = { Icon(Icons.Default.Phone, null) }
                         )
                         HorizontalDivider()
                         DropdownMenuItem(
@@ -199,6 +208,13 @@ fun DashboardScreen(
                             icon = Icons.Default.Info,
                             label = "Analytics",
                             onClick = onAnalyticsClick
+                        )
+                    }
+                    item {
+                        QuickActionCard(
+                            icon = Icons.Default.AccountBalanceWallet,
+                            label = "Notes",
+                            onClick = onNoteInventoryClick
                         )
                     }
                 }

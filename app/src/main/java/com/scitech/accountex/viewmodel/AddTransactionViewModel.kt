@@ -107,4 +107,21 @@ class AddTransactionViewModel(application: Application) : AndroidViewModel(appli
     fun applyTemplate(template: TransactionTemplate) {
         _appliedTemplate.value = template
     }
+    fun loadNotesForAccount(accountId: Int) {
+        viewModelScope.launch {
+            noteDao.getActiveNotesByAccount(accountId).collect { notes ->
+                _availableNotes.value = notes
+            }
+        }
+    }
+
+    fun toggleNoteSelection(noteId: Int) {
+        val current = _selectedNoteIds.value.toMutableSet()
+        if (current.contains(noteId)) {
+            current.remove(noteId)
+        } else {
+            current.add(noteId)
+        }
+        _selectedNoteIds.value = current
+    }
 }
