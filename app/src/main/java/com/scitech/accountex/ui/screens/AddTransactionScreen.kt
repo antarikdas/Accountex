@@ -1,5 +1,5 @@
 package com.scitech.accountex.ui.screens
-
+import androidx.compose.ui.Alignment
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
