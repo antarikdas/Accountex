@@ -21,7 +21,6 @@ class AddTransactionViewModel(application: Application) : AndroidViewModel(appli
     val accounts: StateFlow<List<Account>> = accountDao.getAllAccounts()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // IMPORTANT: Make sure you have this
     private val _appliedTemplate = MutableStateFlow<TransactionTemplate?>(null)
     val appliedTemplate: StateFlow<TransactionTemplate?> = _appliedTemplate.asStateFlow()
 
@@ -43,13 +42,12 @@ class AddTransactionViewModel(application: Application) : AndroidViewModel(appli
                 accountId = accountId
             )
 
-            transactionDao.insertTransaction(transaction)
-
             val txId = transactionDao.insertTransaction(transaction).toInt()
 
-// Save notes if income and serials provided
+            // Save notes if income and serials provided
             if (type == TransactionType.INCOME && noteSerials.isNotBlank()) {
-                val serials = noteSerials.split(Regex("[,\n]")).map { it.trim() }.filter { it.isNotEmpty() }
+                val serials =
+                    noteSerials.split(Regex("[,\n]")).map { it.trim() }.filter { it.isNotEmpty() }
                 serials.forEach { serial ->
                     // Extract denomination from serial (last 3 digits typically)
                     val denom = serial.takeLast(3).toIntOrNull() ?: 500
@@ -65,48 +63,28 @@ class AddTransactionViewModel(application: Application) : AndroidViewModel(appli
                 }
             }
 
+            // This part was correct, just a balance update
             val balanceChange = when (type) {
                 TransactionType.INCOME -> amount
                 TransactionType.EXPENSE -> -amount
                 TransactionType.TRANSFER -> 0.0
             }
+
             // Mark notes as spent if expense
             if (type == TransactionType.EXPENSE && _selectedNoteIds.value.isNotEmpty()) {
                 _selectedNoteIds.value.forEach { noteId ->
                     noteDao.markAsSpent(noteId, txId, System.currentTimeMillis())
                 }
-                clearNoteSelection()
+                clearNoteSelection() // This will now work correctly
             }
 
             accountDao.updateBalance(accountId, balanceChange)
             _appliedTemplate.value = null
         }
-        fun loadNotesForAccount(accountId: Int) {
-            viewModelScope.launch {
-                noteDao.getActiveNotesByAccount(accountId).collect { notes ->
-                    _availableNotes.value = notes
-                }
-            }
-        }
+    } // <- addTransaction function ends here
 
-        fun toggleNoteSelection(noteId: Int) {
-            val current = _selectedNoteIds.value.toMutableSet()
-            if (current.contains(noteId)) {
-                current.remove(noteId)
-            } else {
-                current.add(noteId)
-            }
-            _selectedNoteIds.value = current
-        }
+    // --- MOVED FUNCTIONS START HERE ---
 
-        fun clearNoteSelection() {
-            _selectedNoteIds.value = emptySet()
-        }}
-
-    // IMPORTANT: Make sure you have this method
-    fun applyTemplate(template: TransactionTemplate) {
-        _appliedTemplate.value = template
-    }
     fun loadNotesForAccount(accountId: Int) {
         viewModelScope.launch {
             noteDao.getActiveNotesByAccount(accountId).collect { notes ->
@@ -123,5 +101,15 @@ class AddTransactionViewModel(application: Application) : AndroidViewModel(appli
             current.add(noteId)
         }
         _selectedNoteIds.value = current
+    }
+
+    fun clearNoteSelection() {
+        _selectedNoteIds.value = emptySet()
+    }
+
+    // --- MOVED FUNCTIONS END HERE ---
+
+    fun applyTemplate(template: TransactionTemplate) {
+        _appliedTemplate.value = template
     }
 }
