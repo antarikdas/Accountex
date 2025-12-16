@@ -13,11 +13,13 @@ class AddTransactionViewModel(application: Application) : AndroidViewModel(appli
     private val accountDao = database.accountDao()
     private val transactionDao = database.transactionDao()
     private val noteDao = database.currencyNoteDao()
+
     private val _availableNotes = MutableStateFlow<List<CurrencyNote>>(emptyList())
     val availableNotes: StateFlow<List<CurrencyNote>> = _availableNotes.asStateFlow()
 
     private val _selectedNoteIds = MutableStateFlow<Set<Int>>(emptySet())
     val selectedNoteIds: StateFlow<Set<Int>> = _selectedNoteIds.asStateFlow()
+
     val accounts: StateFlow<List<Account>> = accountDao.getAllAccounts()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -30,40 +32,44 @@ class AddTransactionViewModel(application: Application) : AndroidViewModel(appli
         category: String,
         description: String,
         accountId: Int,
-        noteSerials: String = ""
+        noteSerials: String = "",
+        date: Long,                  // ✅ Added: User-selected date
+        noteDenomination: Int,       // ✅ Added: User-selected denomination (Fixes Inventory Logic)
+        imageUris: List<String>      // ✅ Added: Multiple images support
     ) {
         viewModelScope.launch {
             val transaction = Transaction(
                 type = type,
                 amount = amount,
-                date = System.currentTimeMillis(),
+                date = date,  // Use the passed date
                 category = category,
                 description = description,
-                accountId = accountId
+                accountId = accountId,
+                imageUris = imageUris // Save the list of images
             )
 
             val txId = transactionDao.insertTransaction(transaction).toInt()
 
             // Save notes if income and serials provided
             if (type == TransactionType.INCOME && noteSerials.isNotBlank()) {
-                val serials =
-                    noteSerials.split(Regex("[,\n]")).map { it.trim() }.filter { it.isNotEmpty() }
+                val serials = noteSerials.split(Regex("[,\n]"))
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() }
+
                 serials.forEach { serial ->
-                    // Extract denomination from serial (last 3 digits typically)
                     noteDao.insertNote(
                         CurrencyNote(
                             serialNumber = serial,
-                            amount = amountValue,
-                            denomination = 500,  // or ask user
+                            amount = noteDenomination.toDouble(), // ✅ Fixed: Use explicit denomination value
+                            denomination = noteDenomination,      // ✅ Fixed: Store correct category
                             accountId = accountId,
                             receivedTransactionId = txId,
-                            receivedDate = System.currentTimeMillis()
+                            receivedDate = date
                         )
                     )
                 }
             }
 
-            // This part was correct, just a balance update
             val balanceChange = when (type) {
                 TransactionType.INCOME -> amount
                 TransactionType.EXPENSE -> -amount
@@ -73,7 +79,7 @@ class AddTransactionViewModel(application: Application) : AndroidViewModel(appli
             // Mark notes as spent if expense
             if (type == TransactionType.EXPENSE && _selectedNoteIds.value.isNotEmpty()) {
                 _selectedNoteIds.value.forEach { noteId ->
-                    noteDao.markAsSpent(noteId, txId, System.currentTimeMillis())
+                    noteDao.markAsSpent(noteId, txId, date)
                 }
                 clearNoteSelection()
             }
@@ -81,9 +87,7 @@ class AddTransactionViewModel(application: Application) : AndroidViewModel(appli
             accountDao.updateBalance(accountId, balanceChange)
             _appliedTemplate.value = null
         }
-    } // <- addTransaction function ends here
-
-    // --- MOVED FUNCTIONS START HERE ---
+    }
 
     fun loadNotesForAccount(accountId: Int) {
         viewModelScope.launch {
@@ -106,8 +110,6 @@ class AddTransactionViewModel(application: Application) : AndroidViewModel(appli
     fun clearNoteSelection() {
         _selectedNoteIds.value = emptySet()
     }
-
-    // --- MOVED FUNCTIONS END HERE ---
 
     fun applyTemplate(template: TransactionTemplate) {
         _appliedTemplate.value = template

@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.TypeConverters
 
 @Database(
     entities = [
@@ -12,9 +13,10 @@ import androidx.room.RoomDatabase
         CurrencyNote::class,
         TransactionTemplate::class
     ],
-    version = 3,
+    version = 4, // Incremented to 4
     exportSchema = false
 )
+@TypeConverters(Converters::class) // Added TypeConverters
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun accountDao(): AccountDao

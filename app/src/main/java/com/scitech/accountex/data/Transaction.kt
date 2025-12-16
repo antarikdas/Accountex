@@ -14,7 +14,7 @@ data class Transaction(
     val description: String = "",
     val accountId: Int,
     val toAccountId: Int? = null,
-    val imageUri: String? = null
+    val imageUris: List<String> = emptyList() // CHANGED: Supports multiple images
 )
 
 enum class TransactionType {
