@@ -19,4 +19,18 @@ interface CurrencyNoteDao {
 
     @Query("SELECT * FROM currency_notes WHERE receivedTransactionId = :txId OR spentTransactionId = :txId")
     fun getNotesByTransaction(txId: Int): Flow<List<CurrencyNote>>
+
+    // ... existing functions ...
+
+    // Reverts a note to "Active" state (Un-spend)
+    @Query("UPDATE currency_notes SET spentTransactionId = NULL, spentDate = NULL WHERE spentTransactionId = :txId")
+    suspend fun unspendNotesForTransaction(txId: Int)
+
+    // Deletes notes created by a specific transaction (Undo Income / Undo Change)
+    @Query("DELETE FROM currency_notes WHERE receivedTransactionId = :txId")
+    suspend fun deleteNotesFromTransaction(txId: Int)
+
+    // Check if an income transaction's notes have already been spent (Prevent Delete)
+    @Query("SELECT COUNT(*) FROM currency_notes WHERE receivedTransactionId = :txId AND spentTransactionId IS NOT NULL")
+    suspend fun countSpentNotesFromTransaction(txId: Int): Int
 }

@@ -97,7 +97,6 @@ fun AccountexApp(
         Screen.TransactionDetail -> {
             TransactionDetailScreen(
                 transactionId = selectedTransactionId,
-                viewModel = dashboardViewModel,
                 onNavigateBack = { currentScreen = Screen.Dashboard }
             )
         }

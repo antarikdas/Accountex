@@ -5,7 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.scitech.accountex.data.*
 import kotlinx.coroutines.flow.*
-import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
 import java.util.*
 
 class AnalyticsViewModel(application: Application) : AndroidViewModel(application) {
@@ -29,12 +29,21 @@ class AnalyticsViewModel(application: Application) : AndroidViewModel(applicatio
         val income = filteredTx.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
         val expense = filteredTx.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amount }
 
+        // Category Logic
         val categoryBreakdown = filteredTx
             .filter { it.type == TransactionType.EXPENSE }
             .groupBy { it.category }
             .mapValues { (_, txs) -> txs.sumOf { it.amount } }
             .toList()
             .sortedByDescending { it.second }
+
+        // Graph Logic (Group by Day)
+        val dateFormatter = SimpleDateFormat("dd", Locale.getDefault())
+        val graphData = filteredTx
+            .filter { it.type == TransactionType.EXPENSE }
+            .groupBy { dateFormatter.format(Date(it.date)) }
+            .map { (day, txs) -> day to txs.sumOf { it.amount } }
+            .sortedBy { it.first } // Sort by day
 
         val topExpenses = filteredTx
             .filter { it.type == TransactionType.EXPENSE }
@@ -45,6 +54,7 @@ class AnalyticsViewModel(application: Application) : AndroidViewModel(applicatio
             income = income,
             expense = expense,
             categoryBreakdown = categoryBreakdown,
+            graphData = graphData, // New Field
             topExpenses = topExpenses,
             transactionCount = filteredTx.size
         )
@@ -56,17 +66,16 @@ class AnalyticsViewModel(application: Application) : AndroidViewModel(applicatio
 
     private fun getDateRange(period: AnalyticsPeriod): Pair<Long, Long> {
         val calendar = Calendar.getInstance()
-        val endDate = calendar.timeInMillis
+        val endDate = calendar.timeInMillis // Now
 
+        // Reset to start of day for calculations
         calendar.set(Calendar.HOUR_OF_DAY, 0)
         calendar.set(Calendar.MINUTE, 0)
         calendar.set(Calendar.SECOND, 0)
         calendar.set(Calendar.MILLISECOND, 0)
 
         val startDate = when (period) {
-            AnalyticsPeriod.TODAY -> {
-                calendar.timeInMillis
-            }
+            AnalyticsPeriod.TODAY -> calendar.timeInMillis
             AnalyticsPeriod.THIS_WEEK -> {
                 calendar.set(Calendar.DAY_OF_WEEK, calendar.firstDayOfWeek)
                 calendar.timeInMillis
@@ -79,9 +88,7 @@ class AnalyticsViewModel(application: Application) : AndroidViewModel(applicatio
                 calendar.set(Calendar.DAY_OF_YEAR, 1)
                 calendar.timeInMillis
             }
-            AnalyticsPeriod.ALL_TIME -> {
-                0L
-            }
+            AnalyticsPeriod.ALL_TIME -> 0L
         }
 
         return Pair(startDate, endDate)
@@ -96,6 +103,7 @@ data class PeriodSummary(
     val income: Double = 0.0,
     val expense: Double = 0.0,
     val categoryBreakdown: List<Pair<String, Double>> = emptyList(),
+    val graphData: List<Pair<String, Double>> = emptyList(), // Date (e.g., "12") -> Amount
     val topExpenses: List<Transaction> = emptyList(),
     val transactionCount: Int = 0
 ) {

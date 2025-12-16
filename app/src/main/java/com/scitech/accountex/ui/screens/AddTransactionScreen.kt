@@ -6,20 +6,26 @@ import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -29,9 +35,7 @@ import com.scitech.accountex.data.TransactionType
 import com.scitech.accountex.viewmodel.AddTransactionViewModel
 import com.scitech.accountex.viewmodel.TemplateViewModel
 import java.text.SimpleDateFormat
-import java.util.Calendar
-import java.util.Date
-import java.util.Locale
+import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -41,69 +45,66 @@ fun AddTransactionScreen(
     onNavigateBack: () -> Unit
 ) {
     val context = LocalContext.current
-    val accounts by viewModel.accounts.collectAsState()
-    val templates by templateViewModel.templates.collectAsState()
-    val appliedTemplate by viewModel.appliedTemplate.collectAsState()
 
-    // Form State
-    var selectedType by remember { mutableStateOf(TransactionType.EXPENSE) }
-    var amount by remember { mutableStateOf("") }
-    var category by remember { mutableStateOf("") }
-    var description by remember { mutableStateOf("") }
-    var selectedAccountId by remember { mutableIntStateOf(0) }
+    // OBSERVE STATE FROM VIEWMODEL
+    val uiState by viewModel.uiState.collectAsState()
+    val accounts by viewModel.accounts.collectAsState()
+
+    // Suggestion Data
+    val categorySuggestions by viewModel.categorySuggestions.collectAsState()
+    val descriptionSuggestions by viewModel.descriptionSuggestions.collectAsState()
+
+    // Form Local UI State (Images remain local as they are transient)
+    var selectedImageUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
     var showAccountDropdown by remember { mutableStateOf(false) }
 
-    // New Features State
-    var selectedDate by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    var selectedDenomination by remember { mutableIntStateOf(500) } // Default to 500
-    var selectedImageUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
-
-    // Note Inventory State
-    var noteSerials by remember { mutableStateOf("") }
-    var showNoteInput by remember { mutableStateOf(false) }
-    var showNoteSelector by remember { mutableStateOf(false) }
+    // Inventory State
     val availableNotes by viewModel.availableNotes.collectAsState()
     val selectedNoteIds by viewModel.selectedNoteIds.collectAsState()
+    val incomingNotes by viewModel.incomingNotes.collectAsState()
 
-    // Image Picker Launcher
+    // Temp Note Input
+    var tempSerial by remember { mutableStateOf("") }
+    var tempDenomination by remember { mutableIntStateOf(500) }
+    var showNoteSelector by remember { mutableStateOf(false) }
+
     val imagePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetMultipleContents()
-    ) { uris ->
-        selectedImageUris = uris
-    }
+    ) { uris -> selectedImageUris = uris }
 
-    // Handle back button
     BackHandler { onNavigateBack() }
 
-    // Apply template
-    LaunchedEffect(appliedTemplate) {
-        appliedTemplate?.let { template ->
-            amount = template.defaultAmount.toString()
-            category = template.category
-            selectedAccountId = template.accountId
+    // Logic: Calculate totals
+    val incomingTotal = incomingNotes.sumOf { it.denomination }
+    val selectedSpentTotal = availableNotes.filter { it.id in selectedNoteIds }.sumOf { it.amount }
+    val transactionAmount = uiState.amountInput.toDoubleOrNull() ?: 0.0
+    val changeRequired = if (uiState.selectedType == TransactionType.EXPENSE && selectedSpentTotal > transactionAmount) selectedSpentTotal - transactionAmount else 0.0
+
+    // Auto-fill amount for income based on notes
+    LaunchedEffect(incomingNotes) {
+        if (uiState.selectedType == TransactionType.INCOME && incomingNotes.isNotEmpty()) {
+            viewModel.updateAmount(incomingTotal.toString())
         }
     }
-
-    // Set default account
+    // Auto-select first account
     LaunchedEffect(accounts) {
-        if (selectedAccountId == 0 && accounts.isNotEmpty()) {
-            selectedAccountId = accounts.first().id
+        if (uiState.selectedAccountId == 0 && accounts.isNotEmpty()) {
+            viewModel.updateAccount(accounts.first().id)
         }
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            TopAppBar(
-                title = { Text("Add Transaction", fontWeight = FontWeight.Bold) },
+            CenterAlignedTopAppBar(
+                title = { Text("New Transaction", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
-                    TextButton(onClick = onNavigateBack) {
-                        Text("Cancel")
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(Icons.Default.Close, "Close")
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
                 )
             )
         }
@@ -112,137 +113,173 @@ fun AddTransactionScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(16.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
-            // Quick Templates
-            if (templates.isNotEmpty()) {
-                Text("Quick Templates", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(templates.take(5)) { template ->
-                        FilterChip(
-                            selected = false,
-                            onClick = {
-                                amount = template.defaultAmount.toString()
-                                category = template.category
-                                selectedAccountId = template.accountId
-                            },
-                            label = { Text("${template.name} ₹${template.defaultAmount.toInt()}") }
-                        )
-                    }
-                }
-            }
 
-            // Transaction Type Selector
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(TransactionType.INCOME, TransactionType.EXPENSE, TransactionType.TRANSFER).forEach { type ->
-                    FilterChip(
-                        selected = selectedType == type,
-                        onClick = { selectedType = type },
-                        label = { Text(type.name.lowercase().capitalize(Locale.ROOT)) },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
-
-            // Amount Input
-            OutlinedTextField(
-                value = amount,
-                onValueChange = { amount = it },
-                label = { Text("Amount") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                modifier = Modifier.fillMaxWidth(),
-                prefix = { Text("₹ ") },
-                singleLine = true
-            )
-
-            // ✅ Date & Time Picker (NEW)
-            OutlinedButton(
-                onClick = {
-                    val calendar = Calendar.getInstance()
-                    calendar.timeInMillis = selectedDate
-                    DatePickerDialog(context, { _, year, month, day ->
-                        TimePickerDialog(context, { _, hour, minute ->
-                            calendar.set(year, month, day, hour, minute)
-                            selectedDate = calendar.timeInMillis
-                        }, calendar.get(Calendar.HOUR_OF_DAY), calendar.get(Calendar.MINUTE), false).show()
-                    }, calendar.get(Calendar.YEAR), calendar.get(Calendar.MONTH), calendar.get(Calendar.DAY_OF_MONTH)).show()
-                },
-                modifier = Modifier.fillMaxWidth()
+            // 1. Transaction Type Toggle
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.Default.DateRange, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("Date: ${SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault()).format(Date(selectedDate))}")
+                TypeButton(
+                    text = "Expense",
+                    isSelected = uiState.selectedType == TransactionType.EXPENSE,
+                    onClick = { viewModel.updateType(TransactionType.EXPENSE) }
+                )
+                TypeButton(
+                    text = "Income",
+                    isSelected = uiState.selectedType == TransactionType.INCOME,
+                    onClick = { viewModel.updateType(TransactionType.INCOME) }
+                )
             }
 
-            // Note Input for INCOME
-            if (selectedType == TransactionType.INCOME) {
-                Row(
+            // 2. Huge Amount Input
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    "Enter Amount",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                TextField(
+                    value = uiState.amountInput,
+                    onValueChange = { viewModel.updateAmount(it) },
+                    textStyle = MaterialTheme.typography.displayMedium.copy(
+                        color = if(uiState.selectedType == TransactionType.EXPENSE) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    ),
+                    placeholder = {
+                        Text("0",
+                            style = MaterialTheme.typography.displayMedium.copy(textAlign = androidx.compose.ui.text.style.TextAlign.Center),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    },
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Track Note Numbers", style = MaterialTheme.typography.bodyMedium)
-                    Switch(checked = showNoteInput, onCheckedChange = { showNoteInput = it })
-                }
-
-                if (showNoteInput) {
-                    // ✅ Denomination Chips (NEW - Critical Logic Fix)
-                    Text("Select Denomination:", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 8.dp))
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.horizontalScroll(rememberScrollState())
-                    ) {
-                        listOf(2000, 500, 200, 100, 50, 20, 10).forEach { denom ->
-                            FilterChip(
-                                selected = selectedDenomination == denom,
-                                onClick = { selectedDenomination = denom },
-                                label = { Text("₹$denom") }
-                            )
-                        }
-                    }
-
-                    OutlinedTextField(
-                        value = noteSerials,
-                        onValueChange = { noteSerials = it },
-                        label = { Text("Note Serial Numbers") },
-                        placeholder = { Text("Enter serials (comma or new line separated)") },
-                        modifier = Modifier.fillMaxWidth(),
-                        minLines = 3,
-                        maxLines = 5
-                    )
-                }
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent
+                    ),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    readOnly = uiState.selectedType == TransactionType.INCOME && incomingNotes.isNotEmpty()
+                )
             }
 
-            // Note Selector for EXPENSE
-            if (selectedType == TransactionType.EXPENSE && selectedAccountId != 0) {
-                LaunchedEffect(selectedAccountId) { viewModel.loadNotesForAccount(selectedAccountId) }
-                if (availableNotes.isNotEmpty()) {
+            // 3. Category & Details Card
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(20.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    // Date Picker
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth().clickable {
+                            val calendar = Calendar.getInstance()
+                            calendar.timeInMillis = uiState.selectedDate
+                            DatePickerDialog(context, { _, y, m, d ->
+                                TimePickerDialog(context, { _, h, min ->
+                                    calendar.set(y, m, d, h, min)
+                                    viewModel.updateDate(calendar.timeInMillis)
+                                }, calendar.get(Calendar.HOUR_OF_DAY), calendar.get(Calendar.MINUTE), false).show()
+                            }, calendar.get(Calendar.YEAR), calendar.get(Calendar.MONTH), calendar.get(Calendar.DAY_OF_MONTH)).show()
+                        },
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Select Notes to Spend (${selectedNoteIds.size})", style = MaterialTheme.typography.bodyMedium)
-                        TextButton(onClick = { showNoteSelector = !showNoteSelector }) {
-                            Text(if (showNoteSelector) "Hide" else "Show")
+                        Icon(Icons.Outlined.DateRange, null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            SimpleDateFormat("dd MMMM yyyy, hh:mm a", Locale.getDefault()).format(Date(uiState.selectedDate)),
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                    // Account Selector
+                    Box {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth().clickable { showAccountDropdown = true }
+                        ) {
+                            Icon(Icons.Default.AccountBalanceWallet, null, tint = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text("Account", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                                Text(
+                                    accounts.find { it.id == uiState.selectedAccountId }?.name ?: "Select Account",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                        DropdownMenu(
+                            expanded = showAccountDropdown,
+                            onDismissRequest = { showAccountDropdown = false },
+                            modifier = Modifier.background(MaterialTheme.colorScheme.surface)
+                        ) {
+                            accounts.forEach { account ->
+                                DropdownMenuItem(
+                                    text = { Text("${account.name} (₹${account.balance})") },
+                                    onClick = { viewModel.updateAccount(account.id); showAccountDropdown = false }
+                                )
+                            }
                         }
                     }
-                    if (showNoteSelector) {
-                        Card(modifier = Modifier.fillMaxWidth()) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                availableNotes.groupBy { it.denomination }.forEach { (denom, notes) ->
-                                    Text("₹$denom (${notes.size})", fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 4.dp))
-                                    notes.forEach { note ->
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Checkbox(
-                                                checked = selectedNoteIds.contains(note.id),
-                                                onCheckedChange = { viewModel.toggleNoteSelection(note.id) }
-                                            )
-                                            Text(note.serialNumber, style = MaterialTheme.typography.bodySmall)
-                                        }
-                                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                    // --- CATEGORY: Text Field + Chips ---
+                    Column {
+                        CleanInputRow(
+                            label = "Category",
+                            value = uiState.category,
+                            onValueChange = { viewModel.updateCategory(it) },
+                            icon = Icons.Default.Category
+                        )
+                        val filteredCategories = categorySuggestions.filter {
+                            it.contains(uiState.category, ignoreCase = true)
+                        }
+
+                        if (filteredCategories.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                items(filteredCategories) { suggestion ->
+                                    SuggestionChip(
+                                        onClick = { viewModel.updateCategory(suggestion) },
+                                        label = { Text(suggestion) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                    // --- DESCRIPTION: Text Field + Chips ---
+                    Column {
+                        CleanInputRow(
+                            label = "Description",
+                            value = uiState.description,
+                            onValueChange = { viewModel.updateDescription(it) },
+                            icon = Icons.Default.Description
+                        )
+                        if (uiState.description.isEmpty() && descriptionSuggestions.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                items(descriptionSuggestions) { suggestion ->
+                                    SuggestionChip(
+                                        onClick = { viewModel.updateDescription(suggestion) },
+                                        label = { Text(suggestion) }
+                                    )
                                 }
                             }
                         }
@@ -250,115 +287,226 @@ fun AddTransactionScreen(
                 }
             }
 
-            // Category & Description
-            OutlinedTextField(
-                value = category,
-                onValueChange = { category = it },
-                label = { Text("Category") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true
-            )
-            OutlinedTextField(
-                value = description,
-                onValueChange = { description = it },
-                label = { Text("Description (Optional)") },
-                modifier = Modifier.fillMaxWidth(),
-                minLines = 2
-            )
+            // 4. CASH INVENTORY LOGIC
+            if (uiState.selectedType == TransactionType.INCOME) {
+                CashManagementCard(title = "Cash Received (Inventory)", icon = Icons.Default.Money) {
+                    NoteInputRow(
+                        denomination = tempDenomination,
+                        serial = tempSerial,
+                        onDenomChange = { tempDenomination = it },
+                        onSerialChange = { tempSerial = it },
+                        onAdd = { viewModel.addIncomingNote(tempSerial, tempDenomination); tempSerial = "" }
+                    )
+                    AddedNotesList(incomingNotes) { idx -> viewModel.removeIncomingNote(idx) }
+                }
+            } else {
+                CashManagementCard(title = "Pay with Cash", icon = Icons.Default.Wallet) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Selected: ₹${selectedSpentTotal.toInt()}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        TextButton(onClick = { showNoteSelector = !showNoteSelector }) {
+                            Text(if (showNoteSelector) "Hide Notes" else "Select Notes")
+                        }
+                    }
 
-            // ✅ Image Attachments (NEW)
-            OutlinedButton(
-                onClick = { imagePicker.launch("image/*") },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(if (selectedImageUris.isEmpty()) "Attach Images" else "${selectedImageUris.size} Images Selected")
-            }
-
-            if (selectedImageUris.isNotEmpty()) {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(selectedImageUris) { uri ->
-                        Box(modifier = Modifier.size(80.dp)) {
-                            AsyncImage(
-                                model = uri,
-                                contentDescription = null,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                            IconButton(
-                                onClick = { selectedImageUris = selectedImageUris - uri },
-                                modifier = Modifier.align(Alignment.TopEnd)
-                            ) {
-                                Icon(Icons.Default.Close, "Remove", tint = MaterialTheme.colorScheme.error)
+                    if (showNoteSelector && availableNotes.isNotEmpty()) {
+                        Box(modifier = Modifier.heightIn(max = 200.dp).fillMaxWidth().padding(vertical = 8.dp)) {
+                            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                                availableNotes.groupBy { it.denomination }.forEach { (denom, notes) ->
+                                    Text("₹$denom Notes", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 8.dp))
+                                    notes.forEach { note ->
+                                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { viewModel.toggleNoteSelection(note.id) }) {
+                                            Checkbox(
+                                                checked = selectedNoteIds.contains(note.id),
+                                                onCheckedChange = { viewModel.toggleNoteSelection(note.id) }
+                                            )
+                                            Text("${note.serialNumber} (ID: ${note.id})", style = MaterialTheme.typography.bodySmall)
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
+
+                    if (changeRequired > 0) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text("Change Needed: ₹${changeRequired.toInt()}", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                        NoteInputRow(
+                            denomination = tempDenomination,
+                            serial = tempSerial,
+                            onDenomChange = { tempDenomination = it },
+                            onSerialChange = { tempSerial = it },
+                            onAdd = { viewModel.addIncomingNote(tempSerial, tempDenomination); tempSerial = "" }
+                        )
+                        AddedNotesList(incomingNotes) { idx -> viewModel.removeIncomingNote(idx) }
+                    }
                 }
             }
 
-            // Account Selector
-            ExposedDropdownMenuBox(
-                expanded = showAccountDropdown,
-                onExpandedChange = { showAccountDropdown = it }
+            // 5. Attachments
+            OutlinedButton(
+                onClick = { imagePicker.launch("image/*") },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp)
             ) {
-                OutlinedTextField(
-                    value = accounts.find { it.id == selectedAccountId }?.name ?: "Select Account",
-                    onValueChange = {},
-                    readOnly = true,
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = showAccountDropdown) },
-                    modifier = Modifier.fillMaxWidth().menuAnchor(),
-                    colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors()
-                )
-                ExposedDropdownMenu(
-                    expanded = showAccountDropdown,
-                    onDismissRequest = { showAccountDropdown = false }
-                ) {
-                    accounts.forEach { account ->
-                        DropdownMenuItem(
-                            text = { Text("${account.name} (₹${account.balance})") },
-                            onClick = {
-                                selectedAccountId = account.id
-                                showAccountDropdown = false
-                            }
+                Icon(Icons.Outlined.AttachFile, null)
+                Spacer(Modifier.width(8.dp))
+                Text("Attach Images (${selectedImageUris.size})")
+            }
+            if (selectedImageUris.isNotEmpty()) {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(selectedImageUris) { uri ->
+                        AsyncImage(
+                            model = uri,
+                            contentDescription = null,
+                            modifier = Modifier.size(70.dp).clip(RoundedCornerShape(8.dp)).background(Color.Gray)
                         )
                     }
                 }
             }
 
-            // Save Template Button
-            OutlinedButton(
-                onClick = {
-                    if (amount.isNotBlank() && category.isNotBlank()) {
-                        templateViewModel.saveAsTemplate(category, category, amount.toDoubleOrNull() ?: 0.0, selectedAccountId)
-                    }
-                },
-                modifier = Modifier.fillMaxWidth(),
-                enabled = amount.isNotBlank() && category.isNotBlank()
-            ) { Text("Save as Template") }
+            Spacer(Modifier.height(40.dp))
+        }
 
-            Spacer(modifier = Modifier.height(8.dp))
+        // Floating Save Button
+        Box(modifier = Modifier.fillMaxSize().padding(20.dp), contentAlignment = Alignment.BottomCenter) {
+            val isValid = if (uiState.selectedType == TransactionType.INCOME) transactionAmount > 0 else (transactionAmount > 0 && (if (changeRequired > 0) incomingTotal.toDouble() == changeRequired else true))
 
-            // Save Transaction Button
             Button(
                 onClick = {
-                    val amountValue = amount.toDoubleOrNull()
-                    if (amountValue != null && amountValue > 0 && category.isNotBlank() && selectedAccountId != 0) {
-                        viewModel.addTransaction(
-                            type = selectedType,
-                            amount = amountValue,
-                            category = category.trim(),
-                            description = description.trim(),
-                            accountId = selectedAccountId,
-                            noteSerials = if (selectedType == TransactionType.INCOME) noteSerials else "",
-                            date = selectedDate,                // ✅ Pass Date
-                            noteDenomination = selectedDenomination, // ✅ Pass Denomination (Fix)
-                            imageUris = selectedImageUris.map { it.toString() } // ✅ Pass Images
-                        )
+                    if (isValid) {
+                        viewModel.addTransaction(selectedImageUris.map { it.toString() })
                         onNavigateBack()
                     }
                 },
                 modifier = Modifier.fillMaxWidth().height(56.dp),
-                enabled = amount.toDoubleOrNull() != null && amount.toDoubleOrNull()!! > 0 && category.isNotBlank() && selectedAccountId != 0
+                shape = RoundedCornerShape(16.dp),
+                enabled = isValid,
+                colors = ButtonDefaults.buttonColors(containerColor = if(uiState.selectedType == TransactionType.INCOME) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
             ) {
                 Text("Save Transaction", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+// --- HELPER COMPONENTS ---
+
+@Composable
+fun TypeButton(text: String, isSelected: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .width(140.dp)
+            .height(40.dp)
+            .clip(CircleShape)
+            .background(if (isSelected) MaterialTheme.colorScheme.surface else Color.Transparent)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text,
+            fontWeight = FontWeight.Bold,
+            color = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+fun CleanInputRow(label: String, value: String, onValueChange: (String) -> Unit, icon: ImageVector) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, null, tint = MaterialTheme.colorScheme.primary)
+        Spacer(modifier = Modifier.width(12.dp))
+        Column {
+            Text(label, style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    }
+}
+
+@Composable
+fun BasicTextField(value: String, onValueChange: (String) -> Unit, textStyle: androidx.compose.ui.text.TextStyle, modifier: Modifier = Modifier) {
+    TextField(
+        value = value,
+        onValueChange = onValueChange,
+        textStyle = textStyle,
+        modifier = modifier,
+        colors = TextFieldDefaults.colors(
+            focusedContainerColor = Color.Transparent,
+            unfocusedContainerColor = Color.Transparent,
+            focusedIndicatorColor = Color.Transparent,
+            unfocusedIndicatorColor = Color.Transparent
+        )
+    )
+}
+
+@Composable
+fun CashManagementCard(title: String, icon: ImageVector, content: @Composable ColumnScope.() -> Unit) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(icon, null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(8.dp))
+                Text(title, fontWeight = FontWeight.Bold)
+            }
+            Spacer(Modifier.height(12.dp))
+            content()
+        }
+    }
+}
+
+@Composable
+fun NoteInputRow(denomination: Int, serial: String, onDenomChange: (Int) -> Unit, onSerialChange: (String) -> Unit, onAdd: () -> Unit) {
+    Column {
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(500, 200, 100, 50, 20, 10).forEach { denom ->
+                item {
+                    FilterChip(
+                        selected = denomination == denom,
+                        onClick = { onDenomChange(denom) },
+                        label = { Text("₹$denom") }
+                    )
+                }
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+            OutlinedTextField(
+                value = serial,
+                onValueChange = onSerialChange,
+                label = { Text("Serial (Optional)") },
+                modifier = Modifier.weight(1f),
+                singleLine = true
+            )
+            IconButton(onClick = onAdd) {
+                Icon(Icons.Default.AddCircle, "Add", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(32.dp))
+            }
+        }
+    }
+}
+
+@Composable
+fun AddedNotesList(notes: List<com.scitech.accountex.viewmodel.DraftNote>, onRemove: (Int) -> Unit) {
+    if (notes.isNotEmpty()) {
+        Column(modifier = Modifier.padding(top = 8.dp)) {
+            notes.forEachIndexed { index, note ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("₹${note.denomination} - ${note.serial.ifEmpty { "No Serial" }}")
+                    Icon(
+                        Icons.Outlined.Close, "Remove",
+                        modifier = Modifier.clickable { onRemove(index) },
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                }
             }
         }
     }

@@ -25,12 +25,16 @@ class NoteInventoryViewModel(application: Application) : AndroidViewModel(applic
         else noteDao.getActiveNotesByAccount(accountId)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // ✅ NEW: Groups notes by denomination (e.g., 500 -> [Note1, Note2])
-    // This provides the UI with the CORRECT values, solving the "Inventory Logic" bug.
+    // Group notes by denomination (e.g., 500 -> [Note1, Note2]) sorted High -> Low
     val inventorySummary: StateFlow<Map<Int, List<CurrencyNote>>> = activeNotes.map { notes ->
-        notes.groupBy { it.denomination } // This will error until we update CurrencyNote.kt
+        notes.groupBy { it.denomination }
             .toSortedMap(compareByDescending { it })
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    // NEW: Total Value of all active notes
+    val totalValue: StateFlow<Double> = activeNotes.map { notes ->
+        notes.sumOf { it.amount }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
 
     fun selectAccount(accountId: Int) {
         _selectedAccountId.value = accountId
