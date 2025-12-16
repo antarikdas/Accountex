@@ -1,8 +1,13 @@
 package com.scitech.accountex.ui.screens
 
+import android.Manifest
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
+import android.content.Context
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Environment
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -30,10 +35,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import coil.compose.AsyncImage
 import com.scitech.accountex.data.TransactionType
 import com.scitech.accountex.viewmodel.AddTransactionViewModel
 import com.scitech.accountex.viewmodel.TemplateViewModel
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -54,9 +62,40 @@ fun AddTransactionScreen(
     val categorySuggestions by viewModel.categorySuggestions.collectAsState()
     val descriptionSuggestions by viewModel.descriptionSuggestions.collectAsState()
 
-    // Form Local UI State (Images remain local as they are transient)
+    // Form Local UI State
     var selectedImageUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
     var showAccountDropdown by remember { mutableStateOf(false) }
+
+    // --- CAMERA LOGIC ---
+    var tempPhotoUri by remember { mutableStateOf<Uri?>(null) }
+
+    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        if (success && tempPhotoUri != null) {
+            val newList = selectedImageUris.toMutableList()
+            newList.add(tempPhotoUri!!)
+            selectedImageUris = newList
+        }
+    }
+
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            val (file, uri) = createImageFile(context)
+            tempPhotoUri = uri
+            cameraLauncher.launch(uri)
+        } else {
+            Toast.makeText(context, "Camera permission required", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val galleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetMultipleContents()
+    ) { uris ->
+        val newList = selectedImageUris.toMutableList()
+        newList.addAll(uris)
+        selectedImageUris = newList
+    }
 
     // Inventory State
     val availableNotes by viewModel.availableNotes.collectAsState()
@@ -67,10 +106,6 @@ fun AddTransactionScreen(
     var tempSerial by remember { mutableStateOf("") }
     var tempDenomination by remember { mutableIntStateOf(500) }
     var showNoteSelector by remember { mutableStateOf(false) }
-
-    val imagePicker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetMultipleContents()
-    ) { uris -> selectedImageUris = uris }
 
     BackHandler { onNavigateBack() }
 
@@ -237,7 +272,7 @@ fun AddTransactionScreen(
 
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
-                    // --- CATEGORY: Text Field + Chips ---
+                    // --- CATEGORY ---
                     Column {
                         CleanInputRow(
                             label = "Category",
@@ -264,7 +299,7 @@ fun AddTransactionScreen(
 
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
-                    // --- DESCRIPTION: Text Field + Chips ---
+                    // --- DESCRIPTION ---
                     Column {
                         CleanInputRow(
                             label = "Description",
@@ -346,16 +381,36 @@ fun AddTransactionScreen(
                 }
             }
 
-            // 5. Attachments
-            OutlinedButton(
-                onClick = { imagePicker.launch("image/*") },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Icon(Icons.Outlined.AttachFile, null)
-                Spacer(Modifier.width(8.dp))
-                Text("Attach Images (${selectedImageUris.size})")
+            // 5. ATTACHMENTS SECTION
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // GALLERY BUTTON
+                OutlinedButton(
+                    onClick = { galleryLauncher.launch("image/*") },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(Icons.Outlined.PhotoLibrary, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Gallery")
+                }
+
+                // CAMERA BUTTON
+                Button(
+                    onClick = {
+                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                            val (file, uri) = createImageFile(context)
+                            tempPhotoUri = uri
+                            cameraLauncher.launch(uri)
+                        } else {
+                            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                        }
+                    },
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(Icons.Outlined.CameraAlt, null)
+                }
             }
+
             if (selectedImageUris.isNotEmpty()) {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(selectedImageUris) { uri ->
@@ -393,8 +448,27 @@ fun AddTransactionScreen(
     }
 }
 
-// --- HELPER COMPONENTS ---
+// --- UPDATED HELPER FUNCTION FOR CAMERA ---
+fun createImageFile(context: Context): Pair<File, Uri> {
+    val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
 
+    // Create a dedicated folder "Accountex_Captures" inside the app's external files directory
+    val storageDir = File(context.getExternalFilesDir(null), "Accountex_Captures")
+    if (!storageDir.exists()) {
+        storageDir.mkdirs()
+    }
+
+    val file = File.createTempFile("IMG_${timeStamp}_", ".jpg", storageDir)
+
+    val uri = FileProvider.getUriForFile(
+        context,
+        "${context.packageName}.provider",
+        file
+    )
+    return Pair(file, uri)
+}
+
+// --- REUSABLE COMPONENTS ---
 @Composable
 fun TypeButton(text: String, isSelected: Boolean, onClick: () -> Unit) {
     Box(

@@ -11,7 +11,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -45,6 +44,7 @@ fun DashboardScreen(
     onAnalyticsClick: () -> Unit,
     onNoteInventoryClick: () -> Unit,
     onTransactionClick: (Int) -> Unit,
+    onManageAccountsClick: () -> Unit, // <--- NEW PARAMETER
     context: Context
 ) {
     val accounts by viewModel.accounts.collectAsState()
@@ -52,7 +52,7 @@ fun DashboardScreen(
     val todaySummary by viewModel.todaySummary.collectAsState()
     var showMenu by remember { mutableStateOf(false) }
 
-    // -- Permission Logic (Kept same as before) --
+    // -- Permission Logic --
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
@@ -66,11 +66,11 @@ fun DashboardScreen(
     }
 
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.background, // Uses our new off-white/charcoal
+        containerColor = MaterialTheme.colorScheme.background,
         floatingActionButton = {
             FloatingActionButton(
                 onClick = onAddTransactionClick,
-                containerColor = MaterialTheme.colorScheme.secondary, // Amber color
+                containerColor = MaterialTheme.colorScheme.secondary,
                 contentColor = MaterialTheme.colorScheme.onSecondary,
                 elevation = FloatingActionButtonDefaults.elevation(8.dp)
             ) {
@@ -79,11 +79,10 @@ fun DashboardScreen(
         }
     ) { paddingValues ->
         Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
-            // Background curve decoration
 
             Column(modifier = Modifier.fillMaxSize()) {
 
-                // === 1. HERO SECTION (Custom Header) ===
+                // === 1. HERO SECTION ===
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -138,7 +137,7 @@ fun DashboardScreen(
                         )
                         Text(
                             formatCurrency(viewModel.getTotalBalance()),
-                            style = MaterialTheme.typography.displayMedium, // Much bigger font
+                            style = MaterialTheme.typography.displayMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onPrimary,
                             letterSpacing = (-1).sp
@@ -166,7 +165,7 @@ fun DashboardScreen(
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(20.dp)
                 ) {
-                    // QUICK ACTIONS (Floating Row)
+                    // QUICK ACTIONS
                     item {
                         Text("Quick Actions", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                         Spacer(modifier = Modifier.height(8.dp))
@@ -176,13 +175,27 @@ fun DashboardScreen(
                         ) {
                             ModernActionBtn(Icons.Default.Star, "Templates", MaterialTheme.colorScheme.tertiary, onTemplatesClick)
                             ModernActionBtn(Icons.Default.Analytics, "Analytics", MaterialTheme.colorScheme.tertiary, onAnalyticsClick)
-                            ModernActionBtn(Icons.Default.Inventory, "Inventory", MaterialTheme.colorScheme.tertiary, onNoteInventoryClick) // Changed Icon
+                            ModernActionBtn(Icons.Default.Inventory, "Inventory", MaterialTheme.colorScheme.tertiary, onNoteInventoryClick)
                         }
                     }
 
-                    // ACCOUNTS LIST
+                    // ACCOUNTS LIST (UPDATED HEADER)
                     item {
-                        SectionHeader("Your Accounts")
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "Your Accounts",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            TextButton(onClick = onManageAccountsClick) { // <--- Navigate to Manage
+                                Text("Manage", fontWeight = FontWeight.SemiBold)
+                            }
+                        }
                     }
                     items(accounts) { account ->
                         ModernAccountCard(account)
@@ -201,7 +214,7 @@ fun DashboardScreen(
     }
 }
 
-// --- NEW COMPONENTS ---
+// --- COMPONENTS ---
 
 @Composable
 fun MiniStat(label: String, amount: Double, isPositive: Boolean) {
@@ -213,7 +226,7 @@ fun MiniStat(label: String, amount: Double, isPositive: Boolean) {
             contentAlignment = Alignment.Center
         ) {
             Icon(
-                if(isPositive) Icons.Default.ArrowDownward else Icons.Default.ArrowUpward, // Down arrow for income (incoming)
+                if(isPositive) Icons.Default.ArrowDownward else Icons.Default.ArrowUpward,
                 contentDescription = null,
                 modifier = Modifier.size(14.dp),
                 tint = if(isPositive) Color(0xFF2E7D32) else Color(0xFFC62828)
@@ -292,7 +305,6 @@ fun ModernTransactionItem(transaction: Transaction, onClick: () -> Unit) {
             .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Icon Box
         Box(
             modifier = Modifier
                 .size(48.dp)
@@ -309,7 +321,6 @@ fun ModernTransactionItem(transaction: Transaction, onClick: () -> Unit) {
 
         Spacer(modifier = Modifier.width(16.dp))
 
-        // Text Info
         Column(modifier = Modifier.weight(1f)) {
             Text(transaction.category, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
             Text(
@@ -319,7 +330,6 @@ fun ModernTransactionItem(transaction: Transaction, onClick: () -> Unit) {
             )
         }
 
-        // Amount
         Text(
             text = "${if (transaction.type == TransactionType.EXPENSE) "-" else "+"}${formatCurrency(transaction.amount)}",
             style = MaterialTheme.typography.titleMedium,

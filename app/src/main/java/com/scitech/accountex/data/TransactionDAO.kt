@@ -5,8 +5,13 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface TransactionDao {
-    // --- STANDARD QUERIES ---
+    // ... keep all existing queries ...
 
+    // ADD THIS NEW QUERY:
+    @Query("SELECT COUNT(*) FROM transactions WHERE accountId = :accountId")
+    suspend fun getTxCountForAccount(accountId: Int): Int
+
+    // ... rest of the file ...
     @Query("SELECT * FROM transactions ORDER BY date DESC")
     fun getAllTransactions(): Flow<List<Transaction>>
 
@@ -22,22 +27,14 @@ interface TransactionDao {
     @Query("SELECT * FROM transactions WHERE category = :category ORDER BY date DESC")
     fun getTransactionsByCategory(category: String): Flow<List<Transaction>>
 
-    // --- SMART SUGGESTION QUERIES (NEW) ---
-
-    // Fetches all unique categories alphabetically to suggest in the dropdown
     @Query("SELECT DISTINCT category FROM transactions ORDER BY category ASC")
     fun getUniqueCategories(): Flow<List<String>>
 
-    // Fetches the 20 most recent unique descriptions to suggest as "Chips"
     @Query("SELECT DISTINCT description FROM transactions WHERE description != '' ORDER BY date DESC LIMIT 20")
     fun getRecentsDescriptions(): Flow<List<String>>
 
-    // --- ANALYTICS HELPERS ---
-
     @Query("SELECT SUM(amount) FROM transactions WHERE type = :type AND date BETWEEN :startDate AND :endDate")
     suspend fun getTotalByTypeAndDateRange(type: TransactionType, startDate: Long, endDate: Long): Double?
-
-    // --- WRITES ---
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTransaction(transaction: Transaction): Long
