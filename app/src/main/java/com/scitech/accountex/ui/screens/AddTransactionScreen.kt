@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.CalendarToday
+import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Wallet
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -99,25 +100,41 @@ fun AddTransactionScreen(
 
     var tempSerial by remember { mutableStateOf("") }
     var tempDenomination by remember { mutableIntStateOf(500) }
+
+    // Auto-show note selector if we are spending (Expense or Hand Over)
     var showNoteSelector by remember { mutableStateOf(false) }
+    LaunchedEffect(uiState.selectedType) {
+        showNoteSelector = (uiState.selectedType == TransactionType.EXPENSE || uiState.selectedType == TransactionType.THIRD_PARTY_OUT)
+    }
 
     BackHandler { onNavigateBack() }
+
+    // Logic Variables
+    val isThirdParty = uiState.selectedType == TransactionType.THIRD_PARTY_IN || uiState.selectedType == TransactionType.THIRD_PARTY_OUT
+    val isIncomingFlow = uiState.selectedType == TransactionType.INCOME || uiState.selectedType == TransactionType.THIRD_PARTY_IN
+    val isOutgoingFlow = uiState.selectedType == TransactionType.EXPENSE || uiState.selectedType == TransactionType.THIRD_PARTY_OUT
 
     val incomingTotal = incomingNotes.sumOf { it.denomination }
     val selectedSpentTotal = availableNotes.filter { it.id in selectedNoteIds }.sumOf { it.amount }
     val transactionAmount = uiState.amountInput.toDoubleOrNull() ?: 0.0
-    val changeRequired = if (uiState.selectedType == TransactionType.EXPENSE && selectedSpentTotal > transactionAmount) selectedSpentTotal - transactionAmount else 0.0
+    val changeRequired = if (isOutgoingFlow && selectedSpentTotal > transactionAmount) selectedSpentTotal - transactionAmount else 0.0
 
-    LaunchedEffect(incomingNotes) { if (uiState.selectedType == TransactionType.INCOME && incomingNotes.isNotEmpty()) viewModel.updateAmount(incomingTotal.toString()) }
+    // Auto-Updates
+    LaunchedEffect(incomingNotes) { if (isIncomingFlow && incomingNotes.isNotEmpty()) viewModel.updateAmount(incomingTotal.toString()) }
     LaunchedEffect(accounts) { if (uiState.selectedAccountId == 0 && accounts.isNotEmpty()) viewModel.updateAccount(accounts.first().id) }
 
-    val mainColor = if (uiState.selectedType == TransactionType.EXPENSE) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+    // Theme Color (Red=Expense, Green=Income, Amber=ThirdParty)
+    val mainColor = when (uiState.selectedType) {
+        TransactionType.EXPENSE -> MaterialTheme.colorScheme.error
+        TransactionType.INCOME -> MaterialTheme.colorScheme.primary
+        else -> Color(0xFFFFA000) // Amber for Third Party
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text("New Transaction", fontWeight = FontWeight.Bold) },
+                title = { Text(if (isThirdParty) "Third Party Money" else "New Transaction", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.Default.Close, "Close")
@@ -130,14 +147,13 @@ fun AddTransactionScreen(
             )
         }
     ) { paddingValues ->
-        // WRAP CONTENT IN IME PADDING BOX
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .imePadding() // <--- CRITICAL FIX: Moves content up when keyboard shows
+                .imePadding()
         ) {
-            // Subtle background gradient at the top
+            // Background Gradient
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -145,7 +161,7 @@ fun AddTransactionScreen(
                     .background(
                         Brush.verticalGradient(
                             colors = listOf(
-                                mainColor.copy(alpha = 0.1f),
+                                mainColor.copy(alpha = 0.15f),
                                 MaterialTheme.colorScheme.background
                             )
                         )
@@ -155,14 +171,15 @@ fun AddTransactionScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .verticalScroll(rememberScrollState()) // Allow scrolling
+                    .verticalScroll(rememberScrollState())
                     .padding(horizontal = 24.dp, vertical = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(32.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // 1. Modern Type Switcher
-                NeoTypeSwitcher(
-                    selectedType = uiState.selectedType,
+                // 1. Master Type Switcher (Personal vs Third Party)
+                NeoMasterTypeSwitcher(
+                    currentType = uiState.selectedType,
+                    mainColor = mainColor,
                     onTypeSelected = { viewModel.updateType(it) }
                 )
 
@@ -170,13 +187,12 @@ fun AddTransactionScreen(
                 NeoAmountInput(
                     value = uiState.amountInput,
                     onValueChange = { viewModel.updateAmount(it) },
-                    type = uiState.selectedType,
-                    readOnly = uiState.selectedType == TransactionType.INCOME && incomingNotes.isNotEmpty()
+                    mainColor = mainColor,
+                    readOnly = isIncomingFlow && incomingNotes.isNotEmpty()
                 )
 
-                // 3. Primary Details Panels (Date & Account)
+                // 3. Date & Account
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    // Date Panel
                     NeoDetailPanel(
                         label = "Date",
                         value = SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault()).format(Date(uiState.selectedDate)),
@@ -192,8 +208,6 @@ fun AddTransactionScreen(
                             }, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)).show()
                         }
                     )
-
-                    // Account Panel
                     Box(modifier = Modifier.weight(1f)) {
                         NeoDetailPanel(
                             label = "Account",
@@ -220,8 +234,20 @@ fun AddTransactionScreen(
                     }
                 }
 
-                // 4. Smart Categorization Section
+                // 4. Input Fields
                 Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
+                    // NEW: Third Party Name Field
+                    AnimatedVisibility(visible = isThirdParty) {
+                        NeoSmartInput(
+                            label = "Related Party",
+                            value = uiState.thirdPartyName,
+                            onValueChange = { viewModel.updateThirdPartyName(it) },
+                            icon = Icons.Rounded.Person,
+                            suggestions = emptyList(), // Could add contacts later
+                            placeholder = "Received from / Giving to..."
+                        )
+                    }
+
                     NeoSmartInput(
                         label = "Category",
                         value = uiState.category,
@@ -239,27 +265,28 @@ fun AddTransactionScreen(
                     )
                 }
 
-                // 5. Inventory Logic (Conditional & Styled)
-                AnimatedVisibility(visible = uiState.selectedType == TransactionType.INCOME || showNoteSelector || incomingNotes.isNotEmpty()) {
+                // 5. Inventory Logic (Adaptive)
+                AnimatedVisibility(visible = isIncomingFlow || showNoteSelector || incomingNotes.isNotEmpty()) {
                     NeoInventoryCard(
                         type = uiState.selectedType,
                         mainColor = mainColor
                     ) {
-                        if (uiState.selectedType == TransactionType.INCOME) {
+                        if (isIncomingFlow) {
+                            // Receiving Money (Income OR Third Party In) -> ADD NOTES
                             NoteInputRow(tempDenomination, tempSerial, { tempDenomination = it }, { tempSerial = it }) {
                                 viewModel.addIncomingNote(tempSerial, tempDenomination)
                                 tempSerial = ""
                             }
                             AddedNotesList(incomingNotes) { viewModel.removeIncomingNote(it) }
                         } else {
-                            // Expense Logic
+                            // Spending Money (Expense OR Third Party Out) -> SELECT NOTES
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    "Pay with Cash",
+                                    if(isThirdParty) "Select Held Cash" else "Pay with Cash",
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -317,7 +344,11 @@ fun AddTransactionScreen(
                                         }
                                     }
                                 } else {
-                                    Text("No cash available.", style = MaterialTheme.typography.bodySmall)
+                                    Text(
+                                        if(isThirdParty) "No held notes available." else "No cash available.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.error
+                                    )
                                 }
                             }
 
@@ -340,7 +371,7 @@ fun AddTransactionScreen(
                     }
                 }
 
-                // 6. Attachments Section (Redesigned)
+                // 6. Attachments
                 Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -371,11 +402,11 @@ fun AddTransactionScreen(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(80.dp)) // Space for FAB
+                Spacer(modifier = Modifier.height(80.dp))
             }
 
-            // 7. Floating Save Button
-            val isValid = if (uiState.selectedType == TransactionType.INCOME) transactionAmount > 0 else (transactionAmount > 0 && (if (changeRequired > 0) incomingTotal.toDouble() == changeRequired else true))
+            // 7. Save Button
+            val isValid = if (isIncomingFlow) transactionAmount > 0 else (transactionAmount > 0 && (if (changeRequired > 0) incomingTotal.toDouble() == changeRequired else true))
             val buttonColor = animateColorAsState(targetValue = if (isValid) mainColor else MaterialTheme.colorScheme.surfaceVariant, label = "btnColor")
             val contentColor = animateColorAsState(targetValue = if (isValid) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant, label = "cntColor")
 
@@ -396,11 +427,15 @@ fun AddTransactionScreen(
                 ),
                 elevation = ButtonDefaults.buttonElevation(defaultElevation = if (isValid) 8.dp else 0.dp)
             ) {
-                Text("Save Transaction", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    if(isThirdParty) "Save Record" else "Save Transaction",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
 
-        // Attachment Options Bottom Sheet / Dialog
+        // Attachments Dialog
         if (showAttachmentOptions) {
             AlertDialog(
                 onDismissRequest = { showAttachmentOptions = false },
@@ -440,60 +475,91 @@ fun AddTransactionScreen(
 }
 
 // ==========================================
-// NEW PREMIUM NEO-FINTECH COMPONENTS
+// NEW & UPDATED COMPONENTS
 // ==========================================
 
 @Composable
-private fun NeoTypeSwitcher(
-    selectedType: TransactionType,
+private fun NeoMasterTypeSwitcher(
+    currentType: TransactionType,
+    mainColor: Color,
     onTypeSelected: (TransactionType) -> Unit
 ) {
-    val isExpense = selectedType == TransactionType.EXPENSE
-    val expenseColor = MaterialTheme.colorScheme.error
-    val incomeColor = MaterialTheme.colorScheme.primary
-    val BackgroundColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+    val isThirdParty = currentType == TransactionType.THIRD_PARTY_IN || currentType == TransactionType.THIRD_PARTY_OUT
+    val isPersonal = !isThirdParty
 
-    Box(
-        modifier = Modifier
-            .width(240.dp)
-            .height(48.dp)
-            .clip(CircleShape)
-            .background(BackgroundColor)
-            .padding(4.dp)
-    ) {
-        Row(modifier = Modifier.fillMaxSize()) {
-            // Expense Button
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        // 1. Top Level: Personal vs Third Party
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                .padding(4.dp)
+        ) {
+            // Personal Tab
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight()
-                    .clip(CircleShape)
-                    .background(if (isExpense) expenseColor else Color.Transparent)
-                    .clickable { onTypeSelected(TransactionType.EXPENSE) },
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(if (isPersonal) MaterialTheme.colorScheme.surface else Color.Transparent)
+                    .clickable { onTypeSelected(TransactionType.EXPENSE) }, // Default to Expense
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    "Expense",
-                    fontWeight = FontWeight.Bold,
-                    color = if (isExpense) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.labelLarge
-                )
+                Text("Personal", fontWeight = if (isPersonal) FontWeight.Bold else FontWeight.Normal, color = if(isPersonal) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            // Income Button
+            // Third Party Tab
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight()
-                    .clip(CircleShape)
-                    .background(if (!isExpense) incomeColor else Color.Transparent)
-                    .clickable { onTypeSelected(TransactionType.INCOME) },
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(if (isThirdParty) MaterialTheme.colorScheme.surface else Color.Transparent)
+                    .clickable { onTypeSelected(TransactionType.THIRD_PARTY_IN) }, // Default to Receive
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    "Income",
-                    fontWeight = FontWeight.Bold,
-                    color = if (!isExpense) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.labelLarge
+                Text("Third Party", fontWeight = if (isThirdParty) FontWeight.Bold else FontWeight.Normal, color = if(isThirdParty) Color(0xFFFFA000) else MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+
+        // 2. Sub Level: Specific Actions
+        Row(
+            modifier = Modifier
+                .width(280.dp)
+                .height(40.dp)
+                .align(Alignment.CenterHorizontally)
+                .clip(CircleShape)
+                .background(mainColor.copy(alpha = 0.1f))
+                .border(1.dp, mainColor.copy(alpha = 0.3f), CircleShape)
+        ) {
+            if (isPersonal) {
+                // Personal: Expense vs Income
+                TypeTab(
+                    label = "Expense",
+                    isSelected = currentType == TransactionType.EXPENSE,
+                    selectedColor = MaterialTheme.colorScheme.error,
+                    onClick = { onTypeSelected(TransactionType.EXPENSE) }
+                )
+                TypeTab(
+                    label = "Income",
+                    isSelected = currentType == TransactionType.INCOME,
+                    selectedColor = MaterialTheme.colorScheme.primary,
+                    onClick = { onTypeSelected(TransactionType.INCOME) }
+                )
+            } else {
+                // Third Party: Receive vs Hand Over
+                TypeTab(
+                    label = "Receive (Hold)",
+                    isSelected = currentType == TransactionType.THIRD_PARTY_IN,
+                    selectedColor = Color(0xFFFFA000),
+                    onClick = { onTypeSelected(TransactionType.THIRD_PARTY_IN) }
+                )
+                TypeTab(
+                    label = "Hand Over (Out)",
+                    isSelected = currentType == TransactionType.THIRD_PARTY_OUT,
+                    selectedColor = Color(0xFFFFA000),
+                    onClick = { onTypeSelected(TransactionType.THIRD_PARTY_OUT) }
                 )
             }
         }
@@ -501,13 +567,32 @@ private fun NeoTypeSwitcher(
 }
 
 @Composable
+private fun RowScope.TypeTab(label: String, isSelected: Boolean, selectedColor: Color, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .weight(1f)
+            .fillMaxHeight()
+            .clip(CircleShape)
+            .background(if (isSelected) selectedColor else Color.Transparent)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            label,
+            fontWeight = FontWeight.Bold,
+            color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.labelMedium
+        )
+    }
+}
+
+@Composable
 private fun NeoAmountInput(
     value: String,
     onValueChange: (String) -> Unit,
-    type: TransactionType,
+    mainColor: Color,
     readOnly: Boolean
 ) {
-    val mainColor = if (type == TransactionType.EXPENSE) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
     val textStyle = MaterialTheme.typography.displayLarge.copy(
         fontWeight = FontWeight.Bold,
         color = mainColor,
@@ -524,11 +609,7 @@ private fun NeoAmountInput(
         )
         Spacer(modifier = Modifier.height(8.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                "₹",
-                style = textStyle.copy(fontWeight = FontWeight.Medium),
-                modifier = Modifier.padding(top = 8.dp)
-            )
+            Text("₹", style = textStyle.copy(fontWeight = FontWeight.Medium), modifier = Modifier.padding(top = 8.dp))
             Spacer(modifier = Modifier.width(4.dp))
             BasicTextField(
                 value = value,
@@ -538,12 +619,10 @@ private fun NeoAmountInput(
                 readOnly = readOnly,
                 singleLine = true,
                 cursorBrush = SolidColor(mainColor),
-                decorationBox = { innerTextField ->
+                decorationBox = { inner ->
                     Box(contentAlignment = Alignment.Center) {
-                        if (value.isEmpty()) {
-                            Text("0", style = textStyle.copy(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)))
-                        }
-                        innerTextField()
+                        if (value.isEmpty()) Text("0", style = textStyle.copy(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)))
+                        inner()
                     }
                 }
             )
@@ -552,32 +631,16 @@ private fun NeoAmountInput(
 }
 
 @Composable
-private fun NeoDetailPanel(
-    label: String,
-    value: String,
-    icon: ImageVector,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit
-) {
+private fun NeoDetailPanel(label: String, value: String, icon: ImageVector, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Surface(
-        modifier = modifier
-            .clip(RoundedCornerShape(20.dp))
-            .clickable(onClick = onClick),
+        modifier = modifier.clip(RoundedCornerShape(20.dp)).clickable(onClick = onClick),
         color = MaterialTheme.colorScheme.surface,
         tonalElevation = 2.dp,
         shape = RoundedCornerShape(20.dp),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
     ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
+        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(modifier = Modifier.size(40.dp).background(MaterialTheme.colorScheme.primaryContainer, CircleShape), contentAlignment = Alignment.Center) {
                 Icon(icon, null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
             }
             Spacer(modifier = Modifier.width(12.dp))
@@ -595,7 +658,8 @@ private fun NeoSmartInput(
     value: String,
     onValueChange: (String) -> Unit,
     icon: ImageVector,
-    suggestions: List<String>
+    suggestions: List<String>,
+    placeholder: String = "Enter ${label.lowercase()}..."
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -608,17 +672,20 @@ private fun NeoSmartInput(
             onValueChange = onValueChange,
             suggestions = suggestions,
             modifier = Modifier.fillMaxWidth(),
-            placeholder = "Enter ${label.lowercase()}..."
+            placeholder = placeholder
         )
     }
 }
 
 @Composable
-private fun NeoInventoryCard(
-    type: TransactionType,
-    mainColor: Color,
-    content: @Composable ColumnScope.() -> Unit
-) {
+private fun NeoInventoryCard(type: TransactionType, mainColor: Color, content: @Composable ColumnScope.() -> Unit) {
+    val label = when (type) {
+        TransactionType.INCOME -> "Cash Inventory Entry"
+        TransactionType.THIRD_PARTY_IN -> "Notes to Hold (Entry)"
+        TransactionType.THIRD_PARTY_OUT -> "Select Notes to Hand Over"
+        else -> "Cash Payment Details"
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
@@ -626,22 +693,11 @@ private fun NeoInventoryCard(
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
         border = BorderStroke(1.dp, mainColor.copy(alpha = 0.2f))
     ) {
-        Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
+        Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    if (type == TransactionType.INCOME) Icons.Default.Money else Icons.Default.Wallet,
-                    null,
-                    tint = mainColor
-                )
+                Icon(if (type == TransactionType.INCOME || type == TransactionType.THIRD_PARTY_IN) Icons.Default.Money else Icons.Default.Wallet, null, tint = mainColor)
                 Spacer(modifier = Modifier.width(12.dp))
-                Text(
-                    if (type == TransactionType.INCOME) "Cash Inventory Entry" else "Cash Payment Details",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
+                Text(label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             }
             Divider(color = mainColor.copy(alpha = 0.2f))
             content()
@@ -649,9 +705,7 @@ private fun NeoInventoryCard(
     }
 }
 
-
-// === EXISTING HELPERS (SLIGHTLY MODIFIED FOR STYLE) ===
-
+// === HELPERS ===
 @Composable
 private fun NoteInputRow(denomination: Int, serial: String, onDenomChange: (Int) -> Unit, onSerialChange: (String) -> Unit, onAdd: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -662,38 +716,15 @@ private fun NoteInputRow(denomination: Int, serial: String, onDenomChange: (Int)
                     val isSelected = denomination == denom
                     val color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
                     val contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-                    Surface(
-                        shape = CircleShape,
-                        color = color,
-                        contentColor = contentColor,
-                        modifier = Modifier.clickable { onDenomChange(denom) }
-                    ) {
-                        Text(
-                            text = "₹$denom",
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Medium,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                        )
+                    Surface(shape = CircleShape, color = color, contentColor = contentColor, modifier = Modifier.clickable { onDenomChange(denom) }) {
+                        Text("₹$denom", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
                     }
                 }
             }
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            OutlinedTextField(
-                value = serial,
-                onValueChange = onSerialChange,
-                label = { Text("Serial Number (Optional)") },
-                modifier = Modifier.weight(1f),
-                singleLine = true,
-                shape = RoundedCornerShape(12.dp)
-            )
-            FilledIconButton(
-                onClick = onAdd,
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.size(56.dp)
-            ) {
-                Icon(Icons.Default.Add, "Add")
-            }
+            OutlinedTextField(value = serial, onValueChange = onSerialChange, label = { Text("Serial Number") }, modifier = Modifier.weight(1f), singleLine = true, shape = RoundedCornerShape(12.dp))
+            FilledIconButton(onClick = onAdd, shape = RoundedCornerShape(12.dp), modifier = Modifier.size(56.dp)) { Icon(Icons.Default.Add, "Add") }
         }
     }
 }
@@ -703,29 +734,13 @@ private fun AddedNotesList(notes: List<com.scitech.accountex.viewmodel.DraftNote
     if (notes.isNotEmpty()) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
             notes.forEachIndexed { index, note ->
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+                Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), modifier = Modifier.fillMaxWidth()) {
+                    Row(modifier = Modifier.padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Column {
                             Text("₹${note.denomination}", fontWeight = FontWeight.Bold)
-                            if (note.serial.isNotEmpty()) {
-                                Text("Serial: ${note.serial}", style = MaterialTheme.typography.bodySmall)
-                            }
+                            if (note.serial.isNotEmpty()) Text("Serial: ${note.serial}", style = MaterialTheme.typography.bodySmall)
                         }
-                        IconButton(onClick = { onRemove(index) }) {
-                            Icon(
-                                Icons.Outlined.Delete,
-                                "Remove",
-                                tint = MaterialTheme.colorScheme.error
-                            )
-                        }
+                        IconButton(onClick = { onRemove(index) }) { Icon(Icons.Outlined.Delete, "Remove", tint = MaterialTheme.colorScheme.error) }
                     }
                 }
             }
@@ -733,18 +748,11 @@ private fun AddedNotesList(notes: List<com.scitech.accountex.viewmodel.DraftNote
     }
 }
 
-// KEEP THIS FUNCTION at the bottom of the file
 private fun createImageFile(context: Context): Pair<File, Uri> {
     val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
     val storageDir = File(context.getExternalFilesDir(null), "Accountex_Captures")
-    if (!storageDir.exists()) {
-        storageDir.mkdirs()
-    }
+    if (!storageDir.exists()) storageDir.mkdirs()
     val file = File.createTempFile("IMG_${timeStamp}_", ".jpg", storageDir)
-    val uri = FileProvider.getUriForFile(
-        context,
-        "${context.packageName}.provider",
-        file
-    )
+    val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
     return Pair(file, uri)
 }

@@ -5,13 +5,11 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface TransactionDao {
-    // ... keep all existing queries ...
 
     // ADD THIS NEW QUERY:
     @Query("SELECT COUNT(*) FROM transactions WHERE accountId = :accountId")
     suspend fun getTxCountForAccount(accountId: Int): Int
 
-    // ... rest of the file ...
     @Query("SELECT * FROM transactions ORDER BY date DESC")
     fun getAllTransactions(): Flow<List<Transaction>>
 
@@ -33,6 +31,8 @@ interface TransactionDao {
     @Query("SELECT DISTINCT description FROM transactions WHERE description != '' ORDER BY date DESC LIMIT 20")
     fun getRecentsDescriptions(): Flow<List<String>>
 
+    // CRITICAL: This query is safe because we use specific TransactionType enums.
+    // Income/Expense charts won't accidentally include THIRD_PARTY types.
     @Query("SELECT SUM(amount) FROM transactions WHERE type = :type AND date BETWEEN :startDate AND :endDate")
     suspend fun getTotalByTypeAndDateRange(type: TransactionType, startDate: Long, endDate: Long): Double?
 

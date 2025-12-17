@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.scitech.accountex.data.*
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -19,17 +20,13 @@ class AddTransactionViewModel(application: Application) : AndroidViewModel(appli
     private val _uiState = MutableStateFlow(TransactionFormState())
     val uiState: StateFlow<TransactionFormState> = _uiState.asStateFlow()
 
-    // --- MERGED SMART SUGGESTIONS (FIXED DUPLICATES) ---
-    // Logic: Take Core Defaults + History, remove history items that match defaults (ignoring case), then sort.
-
+    // --- MERGED SMART SUGGESTIONS ---
     val categorySuggestions: StateFlow<List<String>> = transactionDao.getUniqueCategories()
         .map { history ->
             val defaults = CoreData.allCategories
-            // Filter history: If "food" exists in history but "Food" is in defaults, skip "food".
             val uniqueHistory = history.filter { histItem ->
                 defaults.none { defItem -> defItem.equals(histItem, ignoreCase = true) }
             }
-            // Combine and sort alphabetically (case-insensitive)
             (defaults + uniqueHistory).distinct().sortedWith(String.CASE_INSENSITIVE_ORDER)
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), CoreData.allCategories)
@@ -58,9 +55,21 @@ class AddTransactionViewModel(application: Application) : AndroidViewModel(appli
     private val _incomingNotes = MutableStateFlow<List<DraftNote>>(emptyList())
     val incomingNotes: StateFlow<List<DraftNote>> = _incomingNotes.asStateFlow()
 
-    fun loadNotesForAccount(accountId: Int) {
-        viewModelScope.launch {
-            noteDao.getActiveNotesByAccount(accountId).collect { notes ->
+    // JOB to handle switching inventory streams
+    private var inventoryJob: Job? = null
+
+    // REFACTORED: Loads specific notes based on what the user is doing
+    fun loadNotesForAccount(accountId: Int, type: TransactionType) {
+        inventoryJob?.cancel()
+        inventoryJob = viewModelScope.launch {
+            val flow = if (type == TransactionType.THIRD_PARTY_OUT) {
+                // If handing over money, only show held notes
+                noteDao.getActiveThirdPartyNotes(accountId)
+            } else {
+                // If spending normally, only show personal notes
+                noteDao.getActivePersonalNotes(accountId)
+            }
+            flow.collect { notes ->
                 _availableNotes.value = notes
             }
         }
@@ -70,16 +79,21 @@ class AddTransactionViewModel(application: Application) : AndroidViewModel(appli
     fun updateAmount(amount: String) { _uiState.update { it.copy(amountInput = amount) } }
     fun updateCategory(category: String) { _uiState.update { it.copy(category = category) } }
     fun updateDescription(description: String) { _uiState.update { it.copy(description = description) } }
+    fun updateThirdPartyName(name: String) { _uiState.update { it.copy(thirdPartyName = name) } } // NEW
     fun updateDate(date: Long) { _uiState.update { it.copy(selectedDate = date) } }
 
     fun updateType(type: TransactionType) {
         _uiState.update { it.copy(selectedType = type) }
         clearNoteData()
+        // Reload inventory based on the new type (Personal vs Third Party)
+        if (_uiState.value.selectedAccountId != 0) {
+            loadNotesForAccount(_uiState.value.selectedAccountId, type)
+        }
     }
 
     fun updateAccount(accountId: Int) {
         _uiState.update { it.copy(selectedAccountId = accountId) }
-        loadNotesForAccount(accountId)
+        loadNotesForAccount(accountId, _uiState.value.selectedType)
     }
 
     fun applyTemplate(template: TransactionTemplate) {
@@ -92,7 +106,7 @@ class AddTransactionViewModel(application: Application) : AndroidViewModel(appli
                 selectedType = TransactionType.EXPENSE
             )
         }
-        loadNotesForAccount(template.accountId)
+        loadNotesForAccount(template.accountId, TransactionType.EXPENSE)
     }
 
     // --- INVENTORY ACTIONS ---
@@ -121,12 +135,13 @@ class AddTransactionViewModel(application: Application) : AndroidViewModel(appli
         _incomingNotes.value = emptyList()
     }
 
-    // 3. Save Transaction
+    // 3. Save Transaction (UPDATED FOR THIRD PARTY)
     fun addTransaction(imageUris: List<String>) {
         val state = _uiState.value
         val amount = state.amountInput.toDoubleOrNull() ?: 0.0
 
         viewModelScope.launch {
+            // 1. Create Transaction Record
             val tx = Transaction(
                 type = state.selectedType,
                 amount = amount,
@@ -134,21 +149,71 @@ class AddTransactionViewModel(application: Application) : AndroidViewModel(appli
                 description = state.description,
                 date = state.selectedDate,
                 accountId = state.selectedAccountId,
-                imageUris = imageUris
+                imageUris = imageUris,
+                thirdPartyName = state.thirdPartyName // Save the name
             )
             val txId = transactionDao.insertTransaction(tx).toInt()
 
-            if (state.selectedType == TransactionType.INCOME) {
-                _incomingNotes.value.forEach { draft ->
-                    noteDao.insertNote(CurrencyNote(serialNumber = draft.serial, amount = draft.denomination.toDouble(), denomination = draft.denomination, accountId = state.selectedAccountId, receivedTransactionId = txId, receivedDate = state.selectedDate))
+            // 2. Handle Logic based on Type
+            when (state.selectedType) {
+                TransactionType.INCOME -> {
+                    // Standard Income: Update Balance, Add Personal Notes
+                    _incomingNotes.value.forEach { draft ->
+                        noteDao.insertNote(CurrencyNote(
+                            serialNumber = draft.serial,
+                            amount = draft.denomination.toDouble(),
+                            denomination = draft.denomination,
+                            accountId = state.selectedAccountId,
+                            receivedTransactionId = txId,
+                            receivedDate = state.selectedDate,
+                            isThirdParty = false // PERSONAL
+                        ))
+                    }
+                    accountDao.updateBalance(state.selectedAccountId, amount)
                 }
-                accountDao.updateBalance(state.selectedAccountId, amount)
-            } else {
-                _selectedNoteIds.value.forEach { noteId -> noteDao.markAsSpent(noteId, txId, state.selectedDate) }
-                _incomingNotes.value.forEach { draft ->
-                    noteDao.insertNote(CurrencyNote(serialNumber = draft.serial, amount = draft.denomination.toDouble(), denomination = draft.denomination, accountId = state.selectedAccountId, receivedTransactionId = txId, receivedDate = state.selectedDate))
+
+                TransactionType.EXPENSE -> {
+                    // Standard Expense: Update Balance, Spend Notes
+                    _selectedNoteIds.value.forEach { noteId -> noteDao.markAsSpent(noteId, txId, state.selectedDate) }
+                    // Handle change if any (incoming notes during expense)
+                    _incomingNotes.value.forEach { draft ->
+                        noteDao.insertNote(CurrencyNote(
+                            serialNumber = draft.serial,
+                            amount = draft.denomination.toDouble(),
+                            denomination = draft.denomination,
+                            accountId = state.selectedAccountId,
+                            receivedTransactionId = txId,
+                            receivedDate = state.selectedDate,
+                            isThirdParty = false // PERSONAL
+                        ))
+                    }
+                    accountDao.updateBalance(state.selectedAccountId, -amount)
                 }
-                accountDao.updateBalance(state.selectedAccountId, -amount)
+
+                TransactionType.THIRD_PARTY_IN -> {
+                    // Holding Money: NO Balance Update, Add Third-Party Notes
+                    _incomingNotes.value.forEach { draft ->
+                        noteDao.insertNote(CurrencyNote(
+                            serialNumber = draft.serial,
+                            amount = draft.denomination.toDouble(),
+                            denomination = draft.denomination,
+                            accountId = state.selectedAccountId,
+                            receivedTransactionId = txId,
+                            receivedDate = state.selectedDate,
+                            isThirdParty = true, // THIRD PARTY
+                            thirdPartyName = state.thirdPartyName
+                        ))
+                    }
+                    // ZERO IMPACT ON NET WORTH
+                }
+
+                TransactionType.THIRD_PARTY_OUT -> {
+                    // Handing Over: NO Balance Update, Spend Third-Party Notes
+                    _selectedNoteIds.value.forEach { noteId -> noteDao.markAsSpent(noteId, txId, state.selectedDate) }
+                    // ZERO IMPACT ON NET WORTH
+                }
+
+                else -> {} // Transfer logic if needed later
             }
 
             _uiState.value = TransactionFormState()
@@ -162,6 +227,7 @@ data class TransactionFormState(
     val amountInput: String = "",
     val category: String = "",
     val description: String = "",
+    val thirdPartyName: String = "", // NEW
     val selectedAccountId: Int = 0,
     val selectedDate: Long = System.currentTimeMillis()
 )

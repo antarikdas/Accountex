@@ -14,5 +14,7 @@ data class CurrencyNote(
     val receivedTransactionId: Int,
     val spentTransactionId: Int? = null,
     val receivedDate: Long,
-    val spentDate: Long? = null
+    val spentDate: Long? = null,
+    val isThirdParty: Boolean = false, // NEW: Identifies if this note is held for someone else
+    val thirdPartyName: String? = null // NEW: Stores the name associated with the held note
 )
