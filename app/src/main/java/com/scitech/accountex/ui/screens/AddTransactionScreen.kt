@@ -103,8 +103,12 @@ fun AddTransactionScreen(
 
     // Auto-show note selector if we are spending (Expense or Hand Over)
     var showNoteSelector by remember { mutableStateOf(false) }
+
+    // LOGIC FIX: Ensure state updates correctly when type changes, but doesn't override manual user interaction
     LaunchedEffect(uiState.selectedType) {
-        showNoteSelector = (uiState.selectedType == TransactionType.EXPENSE || uiState.selectedType == TransactionType.THIRD_PARTY_OUT)
+        if (uiState.selectedType == TransactionType.EXPENSE || uiState.selectedType == TransactionType.THIRD_PARTY_OUT) {
+            showNoteSelector = true // Default to ON for new expense entry
+        }
     }
 
     BackHandler { onNavigateBack() }
@@ -266,7 +270,9 @@ fun AddTransactionScreen(
                 }
 
                 // 5. Inventory Logic (Adaptive)
-                AnimatedVisibility(visible = isIncomingFlow || showNoteSelector || incomingNotes.isNotEmpty()) {
+                // BUG FIX: We now allow visibility if it's an Outgoing flow, even if user toggled notes OFF.
+                // This keeps the "Pay with Cash" header visible so they can toggle it back ON.
+                AnimatedVisibility(visible = isIncomingFlow || isOutgoingFlow || incomingNotes.isNotEmpty()) {
                     NeoInventoryCard(
                         type = uiState.selectedType,
                         mainColor = mainColor
@@ -297,6 +303,7 @@ fun AddTransactionScreen(
                                 )
                             }
 
+                            // The toggle now strictly controls only the LIST content, not the parent card.
                             if (showNoteSelector) {
                                 Spacer(modifier = Modifier.height(16.dp))
                                 Text(
@@ -402,7 +409,7 @@ fun AddTransactionScreen(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(80.dp))
+                Spacer(modifier = Modifier.height(80.dp)) // Space for FAB
             }
 
             // 7. Save Button
@@ -435,7 +442,7 @@ fun AddTransactionScreen(
             }
         }
 
-        // Attachments Dialog
+        // Attachment Options Bottom Sheet / Dialog
         if (showAttachmentOptions) {
             AlertDialog(
                 onDismissRequest = { showAttachmentOptions = false },

@@ -20,26 +20,51 @@ class AddTransactionViewModel(application: Application) : AndroidViewModel(appli
     private val _uiState = MutableStateFlow(TransactionFormState())
     val uiState: StateFlow<TransactionFormState> = _uiState.asStateFlow()
 
-    // --- MERGED SMART SUGGESTIONS ---
+    // --- MERGED SMART SUGGESTIONS (FIXED LOGIC) ---
+    // Logic: Normalize inputs (trim + lowercase) to detect duplicates.
+    // Prioritize CoreData formatting.
+
     val categorySuggestions: StateFlow<List<String>> = transactionDao.getUniqueCategories()
         .map { history ->
-            val defaults = CoreData.allCategories
-            val uniqueHistory = history.filter { histItem ->
-                defaults.none { defItem -> defItem.equals(histItem, ignoreCase = true) }
-            }
-            (defaults + uniqueHistory).distinct().sortedWith(String.CASE_INSENSITIVE_ORDER)
+            combineAndDedup(CoreData.allCategories, history)
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), CoreData.allCategories)
 
     val descriptionSuggestions: StateFlow<List<String>> = transactionDao.getRecentsDescriptions()
         .map { history ->
-            val defaults = CoreData.allDescriptions
-            val uniqueHistory = history.filter { histItem ->
-                defaults.none { defItem -> defItem.equals(histItem, ignoreCase = true) }
-            }
-            (defaults + uniqueHistory).distinct().sortedWith(String.CASE_INSENSITIVE_ORDER)
+            combineAndDedup(CoreData.allDescriptions, history)
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), CoreData.allDescriptions)
+
+    /**
+     * Helper to robustly de-duplicate lists.
+     * 1. Trims and lowercases to find matches.
+     * 2. Preserves the first casing found (Defaults > History).
+     */
+    private fun combineAndDedup(defaults: List<String>, history: List<String>): List<String> {
+        val seenKeys = mutableSetOf<String>()
+        val result = mutableListOf<String>()
+
+        // 1. Process Defaults First (Preferred Casing)
+        for (item in defaults) {
+            val key = item.trim().lowercase()
+            if (key.isNotEmpty() && !seenKeys.contains(key)) {
+                seenKeys.add(key)
+                result.add(item.trim())
+            }
+        }
+
+        // 2. Process History (Skip if already exists in defaults)
+        for (item in history) {
+            val key = item.trim().lowercase()
+            if (key.isNotEmpty() && !seenKeys.contains(key)) {
+                seenKeys.add(key)
+                result.add(item.trim())
+            }
+        }
+
+        return result.sortedWith(String.CASE_INSENSITIVE_ORDER)
+    }
 
     // 1. Load Accounts
     val accounts: StateFlow<List<Account>> = accountDao.getAllAccounts()
