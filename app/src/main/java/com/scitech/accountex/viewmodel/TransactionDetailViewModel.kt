@@ -3,12 +3,8 @@ package com.scitech.accountex.viewmodel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.scitech.accountex.data.AppDatabase
-import com.scitech.accountex.data.Transaction
-import com.scitech.accountex.data.TransactionType
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import com.scitech.accountex.data.*
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
 class TransactionDetailViewModel(application: Application) : AndroidViewModel(application) {
@@ -27,29 +23,39 @@ class TransactionDetailViewModel(application: Application) : AndroidViewModel(ap
     private val _navigationEvent = MutableStateFlow<Boolean>(false)
     val navigationEvent: StateFlow<Boolean> = _navigationEvent.asStateFlow()
 
+    // --- SUGGESTIONS FOR EDITING ---
+    val categorySuggestions: StateFlow<List<String>> = transactionDao.getUniqueCategories()
+        .map { history -> (CoreData.allCategories + history).distinct().sorted() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), CoreData.allCategories)
+
+    val descriptionSuggestions: StateFlow<List<String>> = transactionDao.getRecentsDescriptions()
+        .map { history -> (CoreData.allDescriptions + history).distinct().sorted() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), CoreData.allDescriptions)
+
     fun loadTransaction(id: Int) {
         viewModelScope.launch {
             _transaction.value = transactionDao.getTransactionById(id)
         }
     }
 
-    fun updateTransaction(id: Int, newAmount: Double, newDate: Long) {
+    // UPDATED: Now accepts Category and Description
+    fun updateTransaction(id: Int, newAmount: Double, newDate: Long, newCategory: String, newDescription: String) {
         viewModelScope.launch {
             val currentTx = _transaction.value ?: return@launch
 
-            // Calculate balance difference
             val diff = newAmount - currentTx.amount
 
-            // Update the Transaction Record
-            val updatedTx = currentTx.copy(amount = newAmount, date = newDate)
+            val updatedTx = currentTx.copy(
+                amount = newAmount,
+                date = newDate,
+                category = newCategory,
+                description = newDescription
+            )
             transactionDao.updateTransaction(updatedTx)
 
-            // Update Account Balance Logic
-            // If Income increased, add diff. If Expense increased, subtract diff.
             val balanceChange = if (currentTx.type == TransactionType.INCOME) diff else -diff
             accountDao.updateBalance(currentTx.accountId, balanceChange)
 
-            // Reload to show changes
             loadTransaction(id)
         }
     }
@@ -59,24 +65,20 @@ class TransactionDetailViewModel(application: Application) : AndroidViewModel(ap
             val tx = _transaction.value ?: return@launch
 
             if (tx.type == TransactionType.INCOME) {
-                // SAFETY CHECK: Have we already spent the notes from this income?
                 val spentCount = noteDao.countSpentNotesFromTransaction(tx.id)
                 if (spentCount > 0) {
                     _errorEvent.value = "Cannot delete: $spentCount notes from this income have already been spent."
                     return@launch
                 }
-                // Safe to delete: Remove the notes from inventory
                 noteDao.deleteNotesFromTransaction(tx.id)
-                accountDao.updateBalance(tx.accountId, -tx.amount) // Reverse Income
+                accountDao.updateBalance(tx.accountId, -tx.amount)
             } else {
-                // Deleting an Expense: "Un-spend" the notes (return to active inventory)
                 noteDao.unspendNotesForTransaction(tx.id)
-                accountDao.updateBalance(tx.accountId, tx.amount) // Refund Expense
+                accountDao.updateBalance(tx.accountId, tx.amount)
             }
 
-            // Finally, delete the transaction record
             transactionDao.deleteTransaction(tx)
-            _navigationEvent.value = true // Trigger navigation back
+            _navigationEvent.value = true
         }
     }
 

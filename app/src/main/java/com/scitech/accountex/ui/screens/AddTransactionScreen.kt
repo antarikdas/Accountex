@@ -6,39 +6,52 @@ import android.app.TimePickerDialog
 import android.content.Context
 import android.content.pm.PackageManager
 import android.net.Uri
-import android.os.Environment
-import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
+import androidx.compose.material.icons.rounded.AttachFile
+import androidx.compose.material.icons.rounded.CalendarToday
+import androidx.compose.material.icons.rounded.Wallet
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import coil.compose.AsyncImage
 import com.scitech.accountex.data.TransactionType
+import com.scitech.accountex.ui.components.SmartInput
 import com.scitech.accountex.viewmodel.AddTransactionViewModel
 import com.scitech.accountex.viewmodel.TemplateViewModel
 import java.io.File
@@ -53,8 +66,6 @@ fun AddTransactionScreen(
     onNavigateBack: () -> Unit
 ) {
     val context = LocalContext.current
-
-    // OBSERVE STATE FROM VIEWMODEL
     val uiState by viewModel.uiState.collectAsState()
     val accounts by viewModel.accounts.collectAsState()
 
@@ -62,39 +73,24 @@ fun AddTransactionScreen(
     val categorySuggestions by viewModel.categorySuggestions.collectAsState()
     val descriptionSuggestions by viewModel.descriptionSuggestions.collectAsState()
 
-    // Form Local UI State
     var selectedImageUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
     var showAccountDropdown by remember { mutableStateOf(false) }
+    var showAttachmentOptions by remember { mutableStateOf(false) }
 
-    // --- CAMERA LOGIC ---
+    // Camera/Gallery Logic
     var tempPhotoUri by remember { mutableStateOf<Uri?>(null) }
-
     val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
-        if (success && tempPhotoUri != null) {
-            val newList = selectedImageUris.toMutableList()
-            newList.add(tempPhotoUri!!)
-            selectedImageUris = newList
-        }
+        if (success && tempPhotoUri != null) selectedImageUris = selectedImageUris + tempPhotoUri!!
     }
-
-    val cameraPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
+    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
+        selectedImageUris = selectedImageUris + uris
+    }
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
         if (isGranted) {
             val (file, uri) = createImageFile(context)
             tempPhotoUri = uri
             cameraLauncher.launch(uri)
-        } else {
-            Toast.makeText(context, "Camera permission required", Toast.LENGTH_SHORT).show()
         }
-    }
-
-    val galleryLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetMultipleContents()
-    ) { uris ->
-        val newList = selectedImageUris.toMutableList()
-        newList.addAll(uris)
-        selectedImageUris = newList
     }
 
     // Inventory State
@@ -102,31 +98,21 @@ fun AddTransactionScreen(
     val selectedNoteIds by viewModel.selectedNoteIds.collectAsState()
     val incomingNotes by viewModel.incomingNotes.collectAsState()
 
-    // Temp Note Input
     var tempSerial by remember { mutableStateOf("") }
     var tempDenomination by remember { mutableIntStateOf(500) }
     var showNoteSelector by remember { mutableStateOf(false) }
 
     BackHandler { onNavigateBack() }
 
-    // Logic: Calculate totals
     val incomingTotal = incomingNotes.sumOf { it.denomination }
     val selectedSpentTotal = availableNotes.filter { it.id in selectedNoteIds }.sumOf { it.amount }
     val transactionAmount = uiState.amountInput.toDoubleOrNull() ?: 0.0
     val changeRequired = if (uiState.selectedType == TransactionType.EXPENSE && selectedSpentTotal > transactionAmount) selectedSpentTotal - transactionAmount else 0.0
 
-    // Auto-fill amount for income based on notes
-    LaunchedEffect(incomingNotes) {
-        if (uiState.selectedType == TransactionType.INCOME && incomingNotes.isNotEmpty()) {
-            viewModel.updateAmount(incomingTotal.toString())
-        }
-    }
-    // Auto-select first account
-    LaunchedEffect(accounts) {
-        if (uiState.selectedAccountId == 0 && accounts.isNotEmpty()) {
-            viewModel.updateAccount(accounts.first().id)
-        }
-    }
+    LaunchedEffect(incomingNotes) { if (uiState.selectedType == TransactionType.INCOME && incomingNotes.isNotEmpty()) viewModel.updateAmount(incomingTotal.toString()) }
+    LaunchedEffect(accounts) { if (uiState.selectedAccountId == 0 && accounts.isNotEmpty()) viewModel.updateAccount(accounts.first().id) }
+
+    val mainColor = if (uiState.selectedType == TransactionType.EXPENSE) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -139,123 +125,79 @@ fun AddTransactionScreen(
                     }
                 },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
+                    containerColor = Color.Transparent,
+                    scrolledContainerColor = Color.Transparent
                 )
             )
         }
     ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(24.dp)
-        ) {
-
-            // 1. Transaction Type Toggle
-            Row(
+        Box(modifier = Modifier.fillMaxSize()) {
+            // Subtle background gradient at the top
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(48.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                TypeButton(
-                    text = "Expense",
-                    isSelected = uiState.selectedType == TransactionType.EXPENSE,
-                    onClick = { viewModel.updateType(TransactionType.EXPENSE) }
-                )
-                TypeButton(
-                    text = "Income",
-                    isSelected = uiState.selectedType == TransactionType.INCOME,
-                    onClick = { viewModel.updateType(TransactionType.INCOME) }
-                )
-            }
+                    .height(300.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                mainColor.copy(alpha = 0.1f),
+                                MaterialTheme.colorScheme.background
+                            )
+                        )
+                    )
+            )
 
-            // 2. Huge Amount Input
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    "Enter Amount",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 24.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // 1. Modern Type Switcher
+                NeoTypeSwitcher(
+                    selectedType = uiState.selectedType,
+                    onTypeSelected = { viewModel.updateType(it) }
                 )
-                TextField(
+
+                // 2. Hero Amount Input
+                NeoAmountInput(
                     value = uiState.amountInput,
                     onValueChange = { viewModel.updateAmount(it) },
-                    textStyle = MaterialTheme.typography.displayMedium.copy(
-                        color = if(uiState.selectedType == TransactionType.EXPENSE) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                    ),
-                    placeholder = {
-                        Text("0",
-                            style = MaterialTheme.typography.displayMedium.copy(textAlign = androidx.compose.ui.text.style.TextAlign.Center),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = TextFieldDefaults.colors(
-                        focusedContainerColor = Color.Transparent,
-                        unfocusedContainerColor = Color.Transparent,
-                        focusedIndicatorColor = Color.Transparent,
-                        unfocusedIndicatorColor = Color.Transparent
-                    ),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    type = uiState.selectedType,
                     readOnly = uiState.selectedType == TransactionType.INCOME && incomingNotes.isNotEmpty()
                 )
-            }
 
-            // 3. Category & Details Card
-            Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                shape = RoundedCornerShape(20.dp)
-            ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    // Date Picker
-                    Row(
-                        modifier = Modifier.fillMaxWidth().clickable {
-                            val calendar = Calendar.getInstance()
-                            calendar.timeInMillis = uiState.selectedDate
+                // 3. Primary Details Panels (Date & Account)
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    // Date Panel
+                    NeoDetailPanel(
+                        label = "Date",
+                        value = SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault()).format(Date(uiState.selectedDate)),
+                        icon = Icons.Rounded.CalendarToday,
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            val c = Calendar.getInstance().apply { timeInMillis = uiState.selectedDate }
                             DatePickerDialog(context, { _, y, m, d ->
                                 TimePickerDialog(context, { _, h, min ->
-                                    calendar.set(y, m, d, h, min)
-                                    viewModel.updateDate(calendar.timeInMillis)
-                                }, calendar.get(Calendar.HOUR_OF_DAY), calendar.get(Calendar.MINUTE), false).show()
-                            }, calendar.get(Calendar.YEAR), calendar.get(Calendar.MONTH), calendar.get(Calendar.DAY_OF_MONTH)).show()
-                        },
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Outlined.DateRange, null, tint = MaterialTheme.colorScheme.primary)
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(
-                            SimpleDateFormat("dd MMMM yyyy, hh:mm a", Locale.getDefault()).format(Date(uiState.selectedDate)),
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                    // Account Selector
-                    Box {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth().clickable { showAccountDropdown = true }
-                        ) {
-                            Icon(Icons.Default.AccountBalanceWallet, null, tint = MaterialTheme.colorScheme.primary)
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column {
-                                Text("Account", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
-                                Text(
-                                    accounts.find { it.id == uiState.selectedAccountId }?.name ?: "Select Account",
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    fontWeight = FontWeight.Medium
-                                )
-                            }
+                                    c.set(y, m, d, h, min)
+                                    viewModel.updateDate(c.timeInMillis)
+                                }, c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE), false).show()
+                            }, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)).show()
                         }
+                    )
+
+                    // Account Panel
+                    Box(modifier = Modifier.weight(1f)) {
+                        NeoDetailPanel(
+                            label = "Account",
+                            value = accounts.find { it.id == uiState.selectedAccountId }?.name ?: "Select",
+                            icon = Icons.Rounded.Wallet,
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = { showAccountDropdown = true }
+                        )
                         DropdownMenu(
                             expanded = showAccountDropdown,
                             onDismissRequest = { showAccountDropdown = false },
@@ -264,324 +206,541 @@ fun AddTransactionScreen(
                             accounts.forEach { account ->
                                 DropdownMenuItem(
                                     text = { Text("${account.name} (₹${account.balance})") },
-                                    onClick = { viewModel.updateAccount(account.id); showAccountDropdown = false }
+                                    onClick = {
+                                        viewModel.updateAccount(account.id)
+                                        showAccountDropdown = false
+                                    }
                                 )
                             }
                         }
                     }
-
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                    // --- CATEGORY ---
-                    Column {
-                        CleanInputRow(
-                            label = "Category",
-                            value = uiState.category,
-                            onValueChange = { viewModel.updateCategory(it) },
-                            icon = Icons.Default.Category
-                        )
-                        val filteredCategories = categorySuggestions.filter {
-                            it.contains(uiState.category, ignoreCase = true)
-                        }
-
-                        if (filteredCategories.isNotEmpty()) {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                items(filteredCategories) { suggestion ->
-                                    SuggestionChip(
-                                        onClick = { viewModel.updateCategory(suggestion) },
-                                        label = { Text(suggestion) }
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                    // --- DESCRIPTION ---
-                    Column {
-                        CleanInputRow(
-                            label = "Description",
-                            value = uiState.description,
-                            onValueChange = { viewModel.updateDescription(it) },
-                            icon = Icons.Default.Description
-                        )
-                        if (uiState.description.isEmpty() && descriptionSuggestions.isNotEmpty()) {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                items(descriptionSuggestions) { suggestion ->
-                                    SuggestionChip(
-                                        onClick = { viewModel.updateDescription(suggestion) },
-                                        label = { Text(suggestion) }
-                                    )
-                                }
-                            }
-                        }
-                    }
                 }
-            }
 
-            // 4. CASH INVENTORY LOGIC
-            if (uiState.selectedType == TransactionType.INCOME) {
-                CashManagementCard(title = "Cash Received (Inventory)", icon = Icons.Default.Money) {
-                    NoteInputRow(
-                        denomination = tempDenomination,
-                        serial = tempSerial,
-                        onDenomChange = { tempDenomination = it },
-                        onSerialChange = { tempSerial = it },
-                        onAdd = { viewModel.addIncomingNote(tempSerial, tempDenomination); tempSerial = "" }
+                // 4. Smart Categorization Section
+                Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
+                    NeoSmartInput(
+                        label = "Category",
+                        value = uiState.category,
+                        onValueChange = { viewModel.updateCategory(it) },
+                        icon = Icons.Default.Category,
+                        suggestions = categorySuggestions
                     )
-                    AddedNotesList(incomingNotes) { idx -> viewModel.removeIncomingNote(idx) }
-                }
-            } else {
-                CashManagementCard(title = "Pay with Cash", icon = Icons.Default.Wallet) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Selected: ₹${selectedSpentTotal.toInt()}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                        TextButton(onClick = { showNoteSelector = !showNoteSelector }) {
-                            Text(if (showNoteSelector) "Hide Notes" else "Select Notes")
-                        }
-                    }
 
-                    if (showNoteSelector && availableNotes.isNotEmpty()) {
-                        Box(modifier = Modifier.heightIn(max = 200.dp).fillMaxWidth().padding(vertical = 8.dp)) {
-                            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                                availableNotes.groupBy { it.denomination }.forEach { (denom, notes) ->
-                                    Text("₹$denom Notes", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 8.dp))
-                                    notes.forEach { note ->
-                                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { viewModel.toggleNoteSelection(note.id) }) {
-                                            Checkbox(
-                                                checked = selectedNoteIds.contains(note.id),
-                                                onCheckedChange = { viewModel.toggleNoteSelection(note.id) }
-                                            )
-                                            Text("${note.serialNumber} (ID: ${note.id})", style = MaterialTheme.typography.bodySmall)
+                    NeoSmartInput(
+                        label = "Description",
+                        value = uiState.description,
+                        onValueChange = { viewModel.updateDescription(it) },
+                        icon = Icons.Default.Description,
+                        suggestions = descriptionSuggestions
+                    )
+                }
+
+                // 5. Inventory Logic (Conditional & Styled)
+                AnimatedVisibility(visible = uiState.selectedType == TransactionType.INCOME || showNoteSelector || incomingNotes.isNotEmpty()) {
+                    NeoInventoryCard(
+                        type = uiState.selectedType,
+                        mainColor = mainColor
+                    ) {
+                        if (uiState.selectedType == TransactionType.INCOME) {
+                            NoteInputRow(tempDenomination, tempSerial, { tempDenomination = it }, { tempSerial = it }) {
+                                viewModel.addIncomingNote(tempSerial, tempDenomination)
+                                tempSerial = ""
+                            }
+                            AddedNotesList(incomingNotes) { viewModel.removeIncomingNote(it) }
+                        } else {
+                            // Expense Logic
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    "Pay with Cash",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Switch(
+                                    checked = showNoteSelector,
+                                    onCheckedChange = { showNoteSelector = it },
+                                    colors = SwitchDefaults.colors(checkedThumbColor = mainColor, checkedTrackColor = mainColor.copy(alpha = 0.5f))
+                                )
+                            }
+
+                            if (showNoteSelector) {
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Text(
+                                    "Selected: ₹${selectedSpentTotal.toInt()}",
+                                    fontWeight = FontWeight.Bold,
+                                    color = mainColor
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                if (availableNotes.isNotEmpty()) {
+                                    Box(
+                                        modifier = Modifier
+                                            .heightIn(max = 250.dp)
+                                            .fillMaxWidth()
+                                            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp))
+                                            .padding(8.dp)
+                                    ) {
+                                        Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                                            availableNotes.groupBy { it.denomination }.forEach { (d, n) ->
+                                                Text(
+                                                    "₹$d Notes",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp),
+                                                    color = MaterialTheme.colorScheme.primary
+                                                )
+                                                n.forEach { note ->
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .clickable { viewModel.toggleNoteSelection(note.id) }
+                                                            .padding(4.dp)
+                                                    ) {
+                                                        Checkbox(
+                                                            checked = selectedNoteIds.contains(note.id),
+                                                            onCheckedChange = { viewModel.toggleNoteSelection(note.id) },
+                                                            colors = CheckboxDefaults.colors(checkedColor = mainColor)
+                                                        )
+                                                        Text(
+                                                            "${note.serialNumber} (ID: ${note.id})",
+                                                            style = MaterialTheme.typography.bodySmall
+                                                        )
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
+                                } else {
+                                    Text("No cash available.", style = MaterialTheme.typography.bodySmall)
                                 }
+                            }
+
+                            if (changeRequired > 0) {
+                                Spacer(modifier = Modifier.height(24.dp))
+                                Text(
+                                    "Change to Receive: ₹${changeRequired.toInt()}",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                NoteInputRow(tempDenomination, tempSerial, { tempDenomination = it }, { tempSerial = it }) {
+                                    viewModel.addIncomingNote(tempSerial, tempDenomination)
+                                    tempSerial = ""
+                                }
+                                AddedNotesList(incomingNotes) { viewModel.removeIncomingNote(it) }
                             }
                         }
                     }
+                }
 
-                    if (changeRequired > 0) {
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text("Change Needed: ₹${changeRequired.toInt()}", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
-                        NoteInputRow(
-                            denomination = tempDenomination,
-                            serial = tempSerial,
-                            onDenomChange = { tempDenomination = it },
-                            onSerialChange = { tempSerial = it },
-                            onAdd = { viewModel.addIncomingNote(tempSerial, tempDenomination); tempSerial = "" }
-                        )
-                        AddedNotesList(incomingNotes) { idx -> viewModel.removeIncomingNote(idx) }
+                // 6. Attachments Section (Redesigned)
+                Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { showAttachmentOptions = true }
+                            .padding(8.dp)
+                    ) {
+                        Icon(Icons.Rounded.AttachFile, null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text("Add attachments", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
                     }
-                }
-            }
 
-            // 5. ATTACHMENTS SECTION
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                // GALLERY BUTTON
-                OutlinedButton(
-                    onClick = { galleryLauncher.launch("image/*") },
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Icon(Icons.Outlined.PhotoLibrary, null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Gallery")
-                }
-
-                // CAMERA BUTTON
-                Button(
-                    onClick = {
-                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-                            val (file, uri) = createImageFile(context)
-                            tempPhotoUri = uri
-                            cameraLauncher.launch(uri)
-                        } else {
-                            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                    if (selectedImageUris.isNotEmpty()) {
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            items(selectedImageUris) { uri ->
+                                AsyncImage(
+                                    model = uri,
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .size(80.dp)
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp))
+                                )
+                            }
                         }
-                    },
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Icon(Icons.Outlined.CameraAlt, null)
-                }
-            }
-
-            if (selectedImageUris.isNotEmpty()) {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(selectedImageUris) { uri ->
-                        AsyncImage(
-                            model = uri,
-                            contentDescription = null,
-                            modifier = Modifier.size(70.dp).clip(RoundedCornerShape(8.dp)).background(Color.Gray)
-                        )
                     }
                 }
+
+                Spacer(modifier = Modifier.height(80.dp)) // Space for FAB
             }
 
-            Spacer(Modifier.height(40.dp))
-        }
-
-        // Floating Save Button
-        Box(modifier = Modifier.fillMaxSize().padding(20.dp), contentAlignment = Alignment.BottomCenter) {
+            // 7. Floating Save Button
             val isValid = if (uiState.selectedType == TransactionType.INCOME) transactionAmount > 0 else (transactionAmount > 0 && (if (changeRequired > 0) incomingTotal.toDouble() == changeRequired else true))
+            val buttonColor = animateColorAsState(targetValue = if (isValid) mainColor else MaterialTheme.colorScheme.surfaceVariant, label = "btnColor")
+            val contentColor = animateColorAsState(targetValue = if (isValid) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant, label = "cntColor")
 
             Button(
-                onClick = {
-                    if (isValid) {
-                        viewModel.addTransaction(selectedImageUris.map { it.toString() })
-                        onNavigateBack()
-                    }
-                },
-                modifier = Modifier.fillMaxWidth().height(56.dp),
-                shape = RoundedCornerShape(16.dp),
+                onClick = { viewModel.addTransaction(selectedImageUris.map { it.toString() }); onNavigateBack() },
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(24.dp)
+                    .fillMaxWidth()
+                    .height(56.dp),
+                shape = RoundedCornerShape(28.dp),
                 enabled = isValid,
-                colors = ButtonDefaults.buttonColors(containerColor = if(uiState.selectedType == TransactionType.INCOME) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = buttonColor.value,
+                    contentColor = contentColor.value,
+                    disabledContainerColor = buttonColor.value,
+                    disabledContentColor = contentColor.value
+                ),
+                elevation = ButtonDefaults.buttonElevation(defaultElevation = if (isValid) 8.dp else 0.dp)
             ) {
                 Text("Save Transaction", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            }
+        }
+
+        // Attachment Options Bottom Sheet / Dialog
+        if (showAttachmentOptions) {
+            AlertDialog(
+                onDismissRequest = { showAttachmentOptions = false },
+                title = { Text("Add Attachment") },
+                text = {
+                    Column {
+                        ListItem(
+                            headlineContent = { Text("Take Photo") },
+                            leadingContent = { Icon(Icons.Outlined.CameraAlt, null) },
+                            modifier = Modifier.clickable {
+                                if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                                    val (f, u) = createImageFile(context)
+                                    tempPhotoUri = u
+                                    cameraLauncher.launch(u)
+                                } else {
+                                    cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                                }
+                                showAttachmentOptions = false
+                            }
+                        )
+                        ListItem(
+                            headlineContent = { Text("Choose from Gallery") },
+                            leadingContent = { Icon(Icons.Outlined.PhotoLibrary, null) },
+                            modifier = Modifier.clickable {
+                                galleryLauncher.launch("image/*")
+                                showAttachmentOptions = false
+                            }
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showAttachmentOptions = false }) { Text("Cancel") }
+                }
+            )
+        }
+    }
+}
+
+// ==========================================
+// NEW PREMIUM NEO-FINTECH COMPONENTS
+// ==========================================
+
+@Composable
+private fun NeoTypeSwitcher(
+    selectedType: TransactionType,
+    onTypeSelected: (TransactionType) -> Unit
+) {
+    val isExpense = selectedType == TransactionType.EXPENSE
+    val expenseColor = MaterialTheme.colorScheme.error
+    val incomeColor = MaterialTheme.colorScheme.primary
+    val BackgroundColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+
+    Box(
+        modifier = Modifier
+            .width(240.dp)
+            .height(48.dp)
+            .clip(CircleShape)
+            .background(BackgroundColor)
+            .padding(4.dp)
+    ) {
+        Row(modifier = Modifier.fillMaxSize()) {
+            // Expense Button
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .clip(CircleShape)
+                    .background(if (isExpense) expenseColor else Color.Transparent)
+                    .clickable { onTypeSelected(TransactionType.EXPENSE) },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    "Expense",
+                    fontWeight = FontWeight.Bold,
+                    color = if (isExpense) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelLarge
+                )
+            }
+            // Income Button
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .clip(CircleShape)
+                    .background(if (!isExpense) incomeColor else Color.Transparent)
+                    .clickable { onTypeSelected(TransactionType.INCOME) },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    "Income",
+                    fontWeight = FontWeight.Bold,
+                    color = if (!isExpense) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelLarge
+                )
             }
         }
     }
 }
 
-// --- UPDATED HELPER FUNCTION FOR CAMERA ---
-fun createImageFile(context: Context): Pair<File, Uri> {
-    val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+@Composable
+private fun NeoAmountInput(
+    value: String,
+    onValueChange: (String) -> Unit,
+    type: TransactionType,
+    readOnly: Boolean
+) {
+    val mainColor = if (type == TransactionType.EXPENSE) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+    val textStyle = MaterialTheme.typography.displayLarge.copy(
+        fontWeight = FontWeight.Bold,
+        color = mainColor,
+        textAlign = TextAlign.Center
+    )
 
-    // Create a dedicated folder "Accountex_Captures" inside the app's external files directory
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            "ENTER AMOUNT",
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            letterSpacing = 1.sp
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "₹",
+                style = textStyle.copy(fontWeight = FontWeight.Medium),
+                modifier = Modifier.padding(top = 8.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                textStyle = textStyle,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                readOnly = readOnly,
+                singleLine = true,
+                cursorBrush = SolidColor(mainColor),
+                decorationBox = { innerTextField ->
+                    Box(contentAlignment = Alignment.Center) {
+                        if (value.isEmpty()) {
+                            Text("0", style = textStyle.copy(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)))
+                        }
+                        innerTextField()
+                    }
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun NeoDetailPanel(
+    label: String,
+    value: String,
+    icon: ImageVector,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = modifier
+            .clip(RoundedCornerShape(20.dp))
+            .clickable(onClick = onClick),
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 2.dp,
+        shape = RoundedCornerShape(20.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(icon, null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Column {
+                Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(value, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            }
+        }
+    }
+}
+
+@Composable
+private fun NeoSmartInput(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    icon: ImageVector,
+    suggestions: List<String>
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(label.uppercase(), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        SmartInput(
+            value = value,
+            onValueChange = onValueChange,
+            suggestions = suggestions,
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = "Enter ${label.lowercase()}..."
+        )
+    }
+}
+
+@Composable
+private fun NeoInventoryCard(
+    type: TransactionType,
+    mainColor: Color,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        border = BorderStroke(1.dp, mainColor.copy(alpha = 0.2f))
+    ) {
+        Column(
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    if (type == TransactionType.INCOME) Icons.Default.Money else Icons.Default.Wallet,
+                    null,
+                    tint = mainColor
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    if (type == TransactionType.INCOME) "Cash Inventory Entry" else "Cash Payment Details",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Divider(color = mainColor.copy(alpha = 0.2f))
+            content()
+        }
+    }
+}
+
+
+// === EXISTING HELPERS (SLIGHTLY MODIFIED FOR STYLE) ===
+
+@Composable
+private fun NoteInputRow(denomination: Int, serial: String, onDenomChange: (Int) -> Unit, onSerialChange: (String) -> Unit, onAdd: () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Select Denomination:", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(2000, 500, 200, 100, 50, 20, 10).forEach { denom ->
+                item {
+                    val isSelected = denomination == denom
+                    val color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
+                    val contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                    Surface(
+                        shape = CircleShape,
+                        color = color,
+                        contentColor = contentColor,
+                        modifier = Modifier.clickable { onDenomChange(denom) }
+                    ) {
+                        Text(
+                            text = "₹$denom",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                        )
+                    }
+                }
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedTextField(
+                value = serial,
+                onValueChange = onSerialChange,
+                label = { Text("Serial Number (Optional)") },
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+                shape = RoundedCornerShape(12.dp)
+            )
+            FilledIconButton(
+                onClick = onAdd,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.size(56.dp)
+            ) {
+                Icon(Icons.Default.Add, "Add")
+            }
+        }
+    }
+}
+
+@Composable
+private fun AddedNotesList(notes: List<com.scitech.accountex.viewmodel.DraftNote>, onRemove: (Int) -> Unit) {
+    if (notes.isNotEmpty()) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
+            notes.forEachIndexed { index, note ->
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text("₹${note.denomination}", fontWeight = FontWeight.Bold)
+                            if (note.serial.isNotEmpty()) {
+                                Text("Serial: ${note.serial}", style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                        IconButton(onClick = { onRemove(index) }) {
+                            Icon(
+                                Icons.Outlined.Delete,
+                                "Remove",
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// KEEP THIS FUNCTION at the bottom of the file
+private fun createImageFile(context: Context): Pair<File, Uri> {
+    val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
     val storageDir = File(context.getExternalFilesDir(null), "Accountex_Captures")
     if (!storageDir.exists()) {
         storageDir.mkdirs()
     }
-
     val file = File.createTempFile("IMG_${timeStamp}_", ".jpg", storageDir)
-
     val uri = FileProvider.getUriForFile(
         context,
         "${context.packageName}.provider",
         file
     )
     return Pair(file, uri)
-}
-
-// --- REUSABLE COMPONENTS ---
-@Composable
-fun TypeButton(text: String, isSelected: Boolean, onClick: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .width(140.dp)
-            .height(40.dp)
-            .clip(CircleShape)
-            .background(if (isSelected) MaterialTheme.colorScheme.surface else Color.Transparent)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text,
-            fontWeight = FontWeight.Bold,
-            color = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-}
-
-@Composable
-fun CleanInputRow(label: String, value: String, onValueChange: (String) -> Unit, icon: ImageVector) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(icon, null, tint = MaterialTheme.colorScheme.primary)
-        Spacer(modifier = Modifier.width(12.dp))
-        Column {
-            Text(label, style = MaterialTheme.typography.labelSmall, color = Color.Gray)
-            BasicTextField(
-                value = value,
-                onValueChange = onValueChange,
-                textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-    }
-}
-
-@Composable
-fun BasicTextField(value: String, onValueChange: (String) -> Unit, textStyle: androidx.compose.ui.text.TextStyle, modifier: Modifier = Modifier) {
-    TextField(
-        value = value,
-        onValueChange = onValueChange,
-        textStyle = textStyle,
-        modifier = modifier,
-        colors = TextFieldDefaults.colors(
-            focusedContainerColor = Color.Transparent,
-            unfocusedContainerColor = Color.Transparent,
-            focusedIndicatorColor = Color.Transparent,
-            unfocusedIndicatorColor = Color.Transparent
-        )
-    )
-}
-
-@Composable
-fun CashManagementCard(title: String, icon: ImageVector, content: @Composable ColumnScope.() -> Unit) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(icon, null, tint = MaterialTheme.colorScheme.primary)
-                Spacer(Modifier.width(8.dp))
-                Text(title, fontWeight = FontWeight.Bold)
-            }
-            Spacer(Modifier.height(12.dp))
-            content()
-        }
-    }
-}
-
-@Composable
-fun NoteInputRow(denomination: Int, serial: String, onDenomChange: (Int) -> Unit, onSerialChange: (String) -> Unit, onAdd: () -> Unit) {
-    Column {
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf(500, 200, 100, 50, 20, 10).forEach { denom ->
-                item {
-                    FilterChip(
-                        selected = denomination == denom,
-                        onClick = { onDenomChange(denom) },
-                        label = { Text("₹$denom") }
-                    )
-                }
-            }
-        }
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
-            OutlinedTextField(
-                value = serial,
-                onValueChange = onSerialChange,
-                label = { Text("Serial (Optional)") },
-                modifier = Modifier.weight(1f),
-                singleLine = true
-            )
-            IconButton(onClick = onAdd) {
-                Icon(Icons.Default.AddCircle, "Add", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(32.dp))
-            }
-        }
-    }
-}
-
-@Composable
-fun AddedNotesList(notes: List<com.scitech.accountex.viewmodel.DraftNote>, onRemove: (Int) -> Unit) {
-    if (notes.isNotEmpty()) {
-        Column(modifier = Modifier.padding(top = 8.dp)) {
-            notes.forEachIndexed { index, note ->
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text("₹${note.denomination} - ${note.serial.ifEmpty { "No Serial" }}")
-                    Icon(
-                        Icons.Outlined.Close, "Remove",
-                        modifier = Modifier.clickable { onRemove(index) },
-                        tint = MaterialTheme.colorScheme.error
-                    )
-                }
-            }
-        }
-    }
 }

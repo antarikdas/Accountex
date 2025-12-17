@@ -7,11 +7,7 @@ import com.scitech.accountex.data.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
-// Data class for temporary inventory tracking
-data class DraftNote(
-    val serial: String,
-    val denomination: Int
-)
+data class DraftNote(val serial: String, val denomination: Int)
 
 class AddTransactionViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -20,16 +16,18 @@ class AddTransactionViewModel(application: Application) : AndroidViewModel(appli
     private val accountDao = database.accountDao()
     private val noteDao = database.currencyNoteDao()
 
-    // --- FORM STATE (Moved from Screen to ViewModel) ---
     private val _uiState = MutableStateFlow(TransactionFormState())
     val uiState: StateFlow<TransactionFormState> = _uiState.asStateFlow()
 
-    // --- SMART SUGGESTIONS ---
+    // --- MERGED SMART SUGGESTIONS ---
+    // Combines Core Defaults + History from DB
     val categorySuggestions: StateFlow<List<String>> = transactionDao.getUniqueCategories()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        .map { history -> (CoreData.allCategories + history).distinct().sorted() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), CoreData.allCategories)
 
     val descriptionSuggestions: StateFlow<List<String>> = transactionDao.getRecentsDescriptions()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        .map { history -> (CoreData.allDescriptions + history).distinct().sorted() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), CoreData.allDescriptions)
 
     // 1. Load Accounts
     val accounts: StateFlow<List<Account>> = accountDao.getAllAccounts()
@@ -54,18 +52,10 @@ class AddTransactionViewModel(application: Application) : AndroidViewModel(appli
     }
 
     // --- FORM ACTIONS ---
-
-    fun updateAmount(amount: String) {
-        _uiState.update { it.copy(amountInput = amount) }
-    }
-
-    fun updateCategory(category: String) {
-        _uiState.update { it.copy(category = category) }
-    }
-
-    fun updateDescription(description: String) {
-        _uiState.update { it.copy(description = description) }
-    }
+    fun updateAmount(amount: String) { _uiState.update { it.copy(amountInput = amount) } }
+    fun updateCategory(category: String) { _uiState.update { it.copy(category = category) } }
+    fun updateDescription(description: String) { _uiState.update { it.copy(description = description) } }
+    fun updateDate(date: Long) { _uiState.update { it.copy(selectedDate = date) } }
 
     fun updateType(type: TransactionType) {
         _uiState.update { it.copy(selectedType = type) }
@@ -77,26 +67,20 @@ class AddTransactionViewModel(application: Application) : AndroidViewModel(appli
         loadNotesForAccount(accountId)
     }
 
-    fun updateDate(date: Long) {
-        _uiState.update { it.copy(selectedDate = date) }
-    }
-
-    // --- THE MISSING FUNCTION (Fixes MainActivity Error) ---
     fun applyTemplate(template: TransactionTemplate) {
         _uiState.update {
             it.copy(
-                amountInput = template.defaultAmount.toInt().toString(), // Convert to Int string for cleaner UI
+                amountInput = template.defaultAmount.toInt().toString(),
                 category = template.category,
-                description = template.name, // Use template name as description
+                description = template.name,
                 selectedAccountId = template.accountId,
-                selectedType = TransactionType.EXPENSE // Templates are usually expenses
+                selectedType = TransactionType.EXPENSE
             )
         }
         loadNotesForAccount(template.accountId)
     }
 
     // --- INVENTORY ACTIONS ---
-
     fun toggleNoteSelection(noteId: Int) {
         val current = _selectedNoteIds.value.toMutableSet()
         if (current.contains(noteId)) current.remove(noteId) else current.add(noteId)
@@ -128,7 +112,6 @@ class AddTransactionViewModel(application: Application) : AndroidViewModel(appli
         val amount = state.amountInput.toDoubleOrNull() ?: 0.0
 
         viewModelScope.launch {
-            // A. Insert Transaction
             val tx = Transaction(
                 type = state.selectedType,
                 amount = amount,
@@ -140,46 +123,19 @@ class AddTransactionViewModel(application: Application) : AndroidViewModel(appli
             )
             val txId = transactionDao.insertTransaction(tx).toInt()
 
-            // B. Handle Inventory Logic
             if (state.selectedType == TransactionType.INCOME) {
-                // Add new notes to inventory
                 _incomingNotes.value.forEach { draft ->
-                    noteDao.insertNote(
-                        CurrencyNote(
-                            serialNumber = draft.serial,
-                            amount = draft.denomination.toDouble(),
-                            denomination = draft.denomination,
-                            accountId = state.selectedAccountId,
-                            receivedTransactionId = txId,
-                            receivedDate = state.selectedDate
-                        )
-                    )
+                    noteDao.insertNote(CurrencyNote(serialNumber = draft.serial, amount = draft.denomination.toDouble(), denomination = draft.denomination, accountId = state.selectedAccountId, receivedTransactionId = txId, receivedDate = state.selectedDate))
                 }
                 accountDao.updateBalance(state.selectedAccountId, amount)
-
             } else {
-                // EXPENSE: Mark selected notes as SPENT
-                _selectedNoteIds.value.forEach { noteId ->
-                    noteDao.markAsSpent(noteId, txId, state.selectedDate)
-                }
-
-                // If CHANGE was received
+                _selectedNoteIds.value.forEach { noteId -> noteDao.markAsSpent(noteId, txId, state.selectedDate) }
                 _incomingNotes.value.forEach { draft ->
-                    noteDao.insertNote(
-                        CurrencyNote(
-                            serialNumber = draft.serial,
-                            amount = draft.denomination.toDouble(),
-                            denomination = draft.denomination,
-                            accountId = state.selectedAccountId,
-                            receivedTransactionId = txId,
-                            receivedDate = state.selectedDate
-                        )
-                    )
+                    noteDao.insertNote(CurrencyNote(serialNumber = draft.serial, amount = draft.denomination.toDouble(), denomination = draft.denomination, accountId = state.selectedAccountId, receivedTransactionId = txId, receivedDate = state.selectedDate))
                 }
                 accountDao.updateBalance(state.selectedAccountId, -amount)
             }
 
-            // Reset Form after save
             _uiState.value = TransactionFormState()
             clearNoteData()
         }
