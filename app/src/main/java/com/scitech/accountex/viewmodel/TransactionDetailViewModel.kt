@@ -50,6 +50,7 @@ class TransactionDetailViewModel(application: Application) : AndroidViewModel(ap
                 date = newDate,
                 category = newCategory,
                 description = newDescription
+                // imageUris remains the same in this path
             )
             transactionDao.updateTransaction(updatedTx)
 
@@ -57,6 +58,40 @@ class TransactionDetailViewModel(application: Application) : AndroidViewModel(ap
             accountDao.updateBalance(currentTx.accountId, balanceChange)
 
             loadTransaction(id)
+        }
+    }
+
+    // --- NEW IMAGE MANAGEMENT FUNCTIONS ---
+
+    private fun updateTransactionImageUris(newUris: List<String>) {
+        viewModelScope.launch {
+            val currentTx = _transaction.value ?: return@launch
+            val updatedTx = currentTx.copy(imageUris = newUris)
+            transactionDao.updateTransaction(updatedTx)
+            _transaction.value = updatedTx // Update state immediately
+        }
+    }
+
+    fun addImageUri(uri: String) {
+        val currentUris = _transaction.value?.imageUris.orEmpty().toMutableList()
+        if (!currentUris.contains(uri)) {
+            currentUris.add(uri)
+            updateTransactionImageUris(currentUris)
+        }
+    }
+
+    fun removeImageUri(uri: String) {
+        val currentUris = _transaction.value?.imageUris.orEmpty().toMutableList()
+        currentUris.remove(uri)
+        updateTransactionImageUris(currentUris)
+    }
+
+    fun replaceImageUri(oldUri: String, newUri: String) {
+        val currentUris = _transaction.value?.imageUris.orEmpty().toMutableList()
+        val index = currentUris.indexOf(oldUri)
+        if (index != -1) {
+            currentUris[index] = newUri
+            updateTransactionImageUris(currentUris)
         }
     }
 

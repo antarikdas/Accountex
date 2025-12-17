@@ -61,6 +61,7 @@ fun SmartInput(
                         colors = SuggestionChipDefaults.suggestionChipColors(
                             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
                         ),
+                        // FIX: Use BorderStroke directly to resolve type mismatch
                         border = BorderStroke(
                             width = 1.dp,
                             color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)

@@ -19,14 +19,29 @@ class AddTransactionViewModel(application: Application) : AndroidViewModel(appli
     private val _uiState = MutableStateFlow(TransactionFormState())
     val uiState: StateFlow<TransactionFormState> = _uiState.asStateFlow()
 
-    // --- MERGED SMART SUGGESTIONS ---
-    // Combines Core Defaults + History from DB
+    // --- MERGED SMART SUGGESTIONS (FIXED DUPLICATES) ---
+    // Logic: Take Core Defaults + History, remove history items that match defaults (ignoring case), then sort.
+
     val categorySuggestions: StateFlow<List<String>> = transactionDao.getUniqueCategories()
-        .map { history -> (CoreData.allCategories + history).distinct().sorted() }
+        .map { history ->
+            val defaults = CoreData.allCategories
+            // Filter history: If "food" exists in history but "Food" is in defaults, skip "food".
+            val uniqueHistory = history.filter { histItem ->
+                defaults.none { defItem -> defItem.equals(histItem, ignoreCase = true) }
+            }
+            // Combine and sort alphabetically (case-insensitive)
+            (defaults + uniqueHistory).distinct().sortedWith(String.CASE_INSENSITIVE_ORDER)
+        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), CoreData.allCategories)
 
     val descriptionSuggestions: StateFlow<List<String>> = transactionDao.getRecentsDescriptions()
-        .map { history -> (CoreData.allDescriptions + history).distinct().sorted() }
+        .map { history ->
+            val defaults = CoreData.allDescriptions
+            val uniqueHistory = history.filter { histItem ->
+                defaults.none { defItem -> defItem.equals(histItem, ignoreCase = true) }
+            }
+            (defaults + uniqueHistory).distinct().sortedWith(String.CASE_INSENSITIVE_ORDER)
+        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), CoreData.allDescriptions)
 
     // 1. Load Accounts

@@ -1,15 +1,21 @@
 package com.scitech.accountex.ui.screens
 
+import android.Manifest
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
+import android.content.Context
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -33,6 +39,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.scitech.accountex.data.TransactionType
@@ -40,6 +48,7 @@ import com.scitech.accountex.ui.components.SmartInput
 import com.scitech.accountex.utils.formatCurrency
 import com.scitech.accountex.utils.formatDate
 import com.scitech.accountex.viewmodel.TransactionDetailViewModel
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -66,8 +75,40 @@ fun TransactionDetailScreen(
     var editCategory by remember { mutableStateOf("") }
     var editDescription by remember { mutableStateOf("") }
 
-    // Image Zoom State
-    var selectedImageUri by remember { mutableStateOf<String?>(null) }
+    // Image Management State
+    var selectedImageUriToManage by remember { mutableStateOf<String?>(null) }
+    var selectedImageUriToZoom by remember { mutableStateOf<String?>(null) }
+    var tempPhotoUri by remember { mutableStateOf<Uri?>(null) }
+
+    // --- Image Launchers ---
+    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        if (success && tempPhotoUri != null) {
+            viewModel.addImageUri(tempPhotoUri.toString())
+            selectedImageUriToManage = null
+        }
+    }
+    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            if (selectedImageUriToManage == "ADD") {
+                viewModel.addImageUri(uri.toString())
+            } else if (selectedImageUriToManage != null) {
+                viewModel.replaceImageUri(selectedImageUriToManage!!, uri.toString())
+            }
+            selectedImageUriToManage = null
+        }
+    }
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            val (file, uri) = createImageFile(context)
+            tempPhotoUri = uri
+            cameraLauncher.launch(uri)
+        } else {
+            Toast.makeText(context, "Camera permission required.", Toast.LENGTH_SHORT).show()
+            selectedImageUriToManage = null
+        }
+    }
 
     LaunchedEffect(transactionId) { viewModel.loadTransaction(transactionId) }
     LaunchedEffect(shouldNavigateBack) { if (shouldNavigateBack) onNavigateBack() }
@@ -201,36 +242,72 @@ fun TransactionDetailScreen(
                     }
 
                     // --- IMAGE GALLERY ---
-                    if (tx.imageUris.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(24.dp))
-                        Text("Attachments", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.Start))
-                        Spacer(modifier = Modifier.height(12.dp))
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.align(Alignment.Start)) {
-                            items(tx.imageUris) { uriStr ->
-                                AsyncImage(
-                                    model = Uri.parse(uriStr),
-                                    contentDescription = "Attachment",
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier
-                                        .size(100.dp)
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(Color.LightGray)
-                                        .clickable { selectedImageUri = uriStr }
-                                )
-                            }
-                        }
-                    }
+                    Spacer(modifier = Modifier.height(24.dp))
+                    ImageGallerySection(
+                        uris = tx.imageUris,
+                        onAddClick = { selectedImageUriToManage = "ADD" },
+                        onImageClick = { uriStr -> selectedImageUriToManage = uriStr },
+                        onZoomClick = { uriStr -> selectedImageUriToZoom = uriStr }
+                    )
                 }
             }
         }
     }
 
-    // Full Screen Image Dialog
-    if (selectedImageUri != null) {
-        Dialog(onDismissRequest = { selectedImageUri = null }) {
-            Box(modifier = Modifier.fillMaxSize().clickable { selectedImageUri = null }) {
+    // --- Image Options Bottom Sheet/Dialog ---
+    if (selectedImageUriToManage != null) {
+        val isAddMode = selectedImageUriToManage == "ADD"
+        AlertDialog(
+            onDismissRequest = { selectedImageUriToManage = null },
+            title = { Text(if (isAddMode) "Add New Attachment" else "Manage Attachment") },
+            text = {
+                Column {
+                    // Option 1: Take Photo
+                    ListItem(
+                        headlineContent = { Text(if (isAddMode) "Take New Photo" else "Replace with Camera Photo") },
+                        leadingContent = { Icon(Icons.Default.CameraAlt, null) }, // FIXED: Stable Icon
+                        modifier = Modifier.clickable {
+                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                                val (file, uri) = createImageFile(context)
+                                tempPhotoUri = uri
+                                cameraLauncher.launch(uri)
+                            } else {
+                                cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                            }
+                        }
+                    )
+                    // Option 2: Choose from Gallery
+                    ListItem(
+                        headlineContent = { Text(if (isAddMode) "Choose from Gallery" else "Replace with Gallery Photo") },
+                        leadingContent = { Icon(Icons.Default.Collections, null) }, // FIXED: Stable Icon
+                        modifier = Modifier.clickable {
+                            galleryLauncher.launch("image/*")
+                        }
+                    )
+                    // Option 3: Delete
+                    if (!isAddMode) {
+                        ListItem(
+                            headlineContent = { Text("Delete Photo") },
+                            leadingContent = { Icon(Icons.Outlined.Delete, null, tint = MaterialTheme.colorScheme.error) },
+                            modifier = Modifier.clickable {
+                                viewModel.removeImageUri(selectedImageUriToManage!!)
+                                selectedImageUriToManage = null
+                            }
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { selectedImageUriToManage = null }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (selectedImageUriToZoom != null) {
+        Dialog(onDismissRequest = { selectedImageUriToZoom = null }) {
+            Box(modifier = Modifier.fillMaxSize().clickable { selectedImageUriToZoom = null }) {
                 AsyncImage(
-                    model = Uri.parse(selectedImageUri),
+                    model = Uri.parse(selectedImageUriToZoom),
                     contentDescription = null,
                     modifier = Modifier.fillMaxWidth().align(Alignment.Center),
                     contentScale = ContentScale.Fit
@@ -240,7 +317,89 @@ fun TransactionDetailScreen(
     }
 }
 
-// Helper wrapper to show label/icon in Edit Mode (since SmartInput no longer does it)
+// ===========================================
+// COMPONENTS
+// ===========================================
+
+@Composable
+private fun ImageGallerySection(
+    uris: List<String>,
+    onAddClick: () -> Unit,
+    onImageClick: (String) -> Unit,
+    onZoomClick: (String) -> Unit
+) {
+    Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.Start) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Attachments (${uris.size})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+
+            Button(
+                onClick = onAddClick,
+                shape = RoundedCornerShape(12.dp),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Icon(Icons.Default.Add, null, modifier = Modifier.size(20.dp)) // FIXED: Stable Icon
+                Spacer(Modifier.width(8.dp))
+                Text("Add")
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        if (uris.isEmpty()) {
+            Text("No images attached yet.", style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
+        } else {
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                itemsIndexed(uris) { index, uriStr ->
+                    ImageThumbnail(uriStr, index, onImageClick, onZoomClick)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ImageThumbnail(uriStr: String, index: Int, onImageClick: (String) -> Unit, onZoomClick: (String) -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(100.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color.LightGray)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp))
+            .clickable { onZoomClick(uriStr) }
+    ) {
+        AsyncImage(
+            model = Uri.parse(uriStr),
+            contentDescription = "Attachment ${index + 1}",
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
+        Icon(
+            Icons.Default.MoreVert,
+            contentDescription = "Manage",
+            tint = Color.White,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(4.dp)
+                .clip(CircleShape)
+                .background(Color.Black.copy(alpha = 0.5f))
+                .clickable { onImageClick(uriStr) }
+        )
+    }
+}
+
+private fun createImageFile(context: Context): Pair<File, Uri> {
+    val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+    val storageDir = File(context.getExternalFilesDir(null), "Accountex_Captures")
+    if (!storageDir.exists()) storageDir.mkdirs()
+    val file = File.createTempFile("IMG_${timeStamp}_", ".jpg", storageDir)
+    val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
+    return Pair(file, uri)
+}
+
 @Composable
 fun EditInputWrapper(label: String, icon: ImageVector, content: @Composable () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

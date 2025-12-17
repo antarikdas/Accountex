@@ -9,6 +9,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme // <-- CORRECT IMPORT
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -29,6 +30,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import com.scitech.accountex.data.Account
+import com.scitech.accountex.data.AccountType // <-- Base Import
+import com.scitech.accountex.data.AccountType.* // <-- STATIC IMPORT FIX: Resolves CASH, BANK, CARD
 import com.scitech.accountex.data.Transaction
 import com.scitech.accountex.data.TransactionType
 import com.scitech.accountex.utils.formatCurrency
@@ -44,7 +48,7 @@ fun DashboardScreen(
     onAnalyticsClick: () -> Unit,
     onNoteInventoryClick: () -> Unit,
     onTransactionClick: (Int) -> Unit,
-    onManageAccountsClick: () -> Unit, // <--- NEW PARAMETER
+    onManageAccountsClick: () -> Unit,
     context: Context
 ) {
     val accounts by viewModel.accounts.collectAsState()
@@ -167,7 +171,7 @@ fun DashboardScreen(
                 ) {
                     // QUICK ACTIONS
                     item {
-                        Text("Quick Actions", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        SectionHeader("Quick Actions")
                         Spacer(modifier = Modifier.height(8.dp))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -179,26 +183,21 @@ fun DashboardScreen(
                         }
                     }
 
-                    // ACCOUNTS LIST (UPDATED HEADER)
+                    // ACCOUNTS LIST (Redesigned)
                     item {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                "Your Accounts",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
+                            SectionHeader("Your Accounts")
                             TextButton(onClick = onManageAccountsClick) { // <--- Navigate to Manage
                                 Text("Manage", fontWeight = FontWeight.SemiBold)
                             }
                         }
                     }
                     items(accounts) { account ->
-                        ModernAccountCard(account)
+                        NeoAccountCard(account)
                     }
 
                     // RECENT TRANSACTIONS
@@ -214,10 +213,117 @@ fun DashboardScreen(
     }
 }
 
-// --- COMPONENTS ---
+// --- NEW COMPONENT FOR ACCOUNTS REDESIGN ---
+
+/**
+ * Maps the account type/name to a visually distinct style.
+ */
+data class AccountStyle(val icon: ImageVector, val color: Color, val containerColor: Color)
 
 @Composable
-fun MiniStat(label: String, amount: Double, isPositive: Boolean) {
+fun getAccountStyle(account: Account): AccountStyle {
+    val isDark = isSystemInDarkTheme()
+    val CASH = null
+    val CARD = null
+    val baseColor = when (account.type) {
+        CASH -> Color(0xFF66BB6A) // Green for Cash (RESOLVED by static import)
+        BANK -> Color(0xFF42A5F5) // Blue for Bank (RESOLVED by static import)
+        CARD -> Color(0xFFFFA726) // Orange for Card/Reserve (RESOLVED by static import)
+        else -> MaterialTheme.colorScheme.primary // Fallback
+    }
+
+    val icon = when (account.type) {
+        CASH -> Icons.Default.Money
+        BANK -> Icons.Default.AccountBalance
+        CARD -> Icons.Default.CreditCard
+        else -> Icons.Default.AccountBalanceWallet
+    }
+
+    // Adjust container color for better contrast
+    val containerColor = if (isDark) baseColor.copy(alpha = 0.2f) else baseColor.copy(alpha = 0.1f)
+
+    return AccountStyle(icon, baseColor, containerColor)
+}
+
+@Composable
+fun NeoAccountCard(account: Account) {
+    val style = getAccountStyle(account)
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 100.dp) // Ensure minimum height
+            .padding(vertical = 4.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp), // Stronger elevation
+        shape = RoundedCornerShape(20.dp) // Larger radius for premium feel
+    ) {
+        Column(
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            // Top Section: Icon and Name
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Large, colored icon
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(style.containerColor),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        style.icon,
+                        contentDescription = account.name,
+                        tint = style.color,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(16.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        account.name,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        account.type.name,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color.Gray
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Bottom Section: Balance
+            Text(
+                "Current Balance",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+            )
+            Text(
+                formatCurrency(account.balance),
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.ExtraBold,
+                color = style.color, // Color coded balance
+                letterSpacing = (-0.5).sp
+            )
+        }
+    }
+}
+
+
+// --- EXISTING COMPONENTS (Moved to private fun) ---
+
+@Composable
+private fun MiniStat(label: String, amount: Double, isPositive: Boolean) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(
             modifier = Modifier
@@ -241,7 +347,7 @@ fun MiniStat(label: String, amount: Double, isPositive: Boolean) {
 }
 
 @Composable
-fun ModernActionBtn(icon: ImageVector, label: String, color: Color, onClick: () -> Unit) {
+private fun ModernActionBtn(icon: ImageVector, label: String, color: Color, onClick: () -> Unit) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable(onClick = onClick)) {
         Box(
             modifier = Modifier
@@ -257,47 +363,7 @@ fun ModernActionBtn(icon: ImageVector, label: String, color: Color, onClick: () 
 }
 
 @Composable
-fun ModernAccountCard(account: com.scitech.accountex.data.Account) {
-    Card(
-        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(2.dp),
-        shape = RoundedCornerShape(16.dp)
-    ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .background(MaterialTheme.colorScheme.secondaryContainer, CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    account.name.take(1).uppercase(),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer
-                )
-            }
-            Spacer(modifier = Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(account.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Text(account.type.name, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
-            }
-            Text(
-                formatCurrency(account.balance),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
-            )
-        }
-    }
-}
-
-@Composable
-fun ModernTransactionItem(transaction: Transaction, onClick: () -> Unit) {
+private fun ModernTransactionItem(transaction: Transaction, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -341,7 +407,7 @@ fun ModernTransactionItem(transaction: Transaction, onClick: () -> Unit) {
 }
 
 @Composable
-fun SectionHeader(title: String) {
+private fun SectionHeader(title: String) {
     Text(
         title,
         style = MaterialTheme.typography.titleMedium,
