@@ -24,28 +24,51 @@ class AnalyticsViewModel(application: Application) : AndroidViewModel(applicatio
         selectedPeriod
     ) { txList, period ->
         val (startDate, endDate) = getDateRange(period)
-        val filteredTx = txList.filter { it.date in startDate..endDate }
 
-        val income = filteredTx.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
-        val expense = filteredTx.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amount }
+        // 1. Filter by Date AND Exclude Third Party for Financial Stats
+        val relevantTx = txList.filter {
+            it.date in startDate..endDate &&
+                    (it.type == TransactionType.INCOME || it.type == TransactionType.EXPENSE)
+        }
 
-        // Category Logic
-        val categoryBreakdown = filteredTx
+        val income = relevantTx.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
+        val expense = relevantTx.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amount }
+
+        // 2. Category Breakdown (For Pie Chart)
+        val categoryBreakdown = relevantTx
             .filter { it.type == TransactionType.EXPENSE }
             .groupBy { it.category }
             .mapValues { (_, txs) -> txs.sumOf { it.amount } }
             .toList()
             .sortedByDescending { it.second }
 
-        // Graph Logic (Group by Day)
-        val dateFormatter = SimpleDateFormat("dd", Locale.getDefault())
-        val graphData = filteredTx
-            .filter { it.type == TransactionType.EXPENSE }
-            .groupBy { dateFormatter.format(Date(it.date)) }
-            .map { (day, txs) -> day to txs.sumOf { it.amount } }
-            .sortedBy { it.first } // Sort by day
+        // 3. Dynamic Graph Logic (Bar/Line Chart)
+        val graphPattern = when (period) {
+            AnalyticsPeriod.THIS_WEEK -> "EEE" // Mon, Tue
+            AnalyticsPeriod.THIS_MONTH -> "dd" // 01, 05
+            AnalyticsPeriod.THIS_YEAR -> "MMM" // Jan, Feb
+            AnalyticsPeriod.ALL_TIME -> "yyyy" // 2024, 2025
+            AnalyticsPeriod.TODAY -> "hh a"    // 10 AM, 11 AM
+        }
 
-        val topExpenses = filteredTx
+        val dateFormatter = SimpleDateFormat(graphPattern, Locale.getDefault())
+
+        val graphData = relevantTx
+            .filter { it.type == TransactionType.EXPENSE } // We usually graph expenses
+            .groupBy {
+                // Group by the formatted label
+                dateFormatter.format(Date(it.date))
+            }
+            .map { (label, txs) ->
+                // We need to keep a representative date for sorting,
+                // otherwise "Apr" comes before "Jan" alphabetically.
+                val firstTxDate = txs.first().date
+                Triple(label, txs.sumOf { it.amount }, firstTxDate)
+            }
+            .sortedBy { it.third } // Sort Chronologically
+            .map { it.first to it.second } // Map back to Label -> Amount
+
+        val topExpenses = relevantTx
             .filter { it.type == TransactionType.EXPENSE }
             .sortedByDescending { it.amount }
             .take(5)
@@ -54,9 +77,9 @@ class AnalyticsViewModel(application: Application) : AndroidViewModel(applicatio
             income = income,
             expense = expense,
             categoryBreakdown = categoryBreakdown,
-            graphData = graphData, // New Field
+            graphData = graphData,
             topExpenses = topExpenses,
-            transactionCount = filteredTx.size
+            transactionCount = relevantTx.size
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), PeriodSummary())
 
@@ -66,9 +89,13 @@ class AnalyticsViewModel(application: Application) : AndroidViewModel(applicatio
 
     private fun getDateRange(period: AnalyticsPeriod): Pair<Long, Long> {
         val calendar = Calendar.getInstance()
-        val endDate = calendar.timeInMillis // Now
+        // End date is effectively "now" (or end of today if you prefer inclusive filtering)
+        // Setting to end of today to catch any future-dated txs for today
+        calendar.set(Calendar.HOUR_OF_DAY, 23)
+        calendar.set(Calendar.MINUTE, 59)
+        val endDate = calendar.timeInMillis
 
-        // Reset to start of day for calculations
+        // Reset for Start Date
         calendar.set(Calendar.HOUR_OF_DAY, 0)
         calendar.set(Calendar.MINUTE, 0)
         calendar.set(Calendar.SECOND, 0)
@@ -103,7 +130,7 @@ data class PeriodSummary(
     val income: Double = 0.0,
     val expense: Double = 0.0,
     val categoryBreakdown: List<Pair<String, Double>> = emptyList(),
-    val graphData: List<Pair<String, Double>> = emptyList(), // Date (e.g., "12") -> Amount
+    val graphData: List<Pair<String, Double>> = emptyList(), // Label -> Amount
     val topExpenses: List<Transaction> = emptyList(),
     val transactionCount: Int = 0
 ) {

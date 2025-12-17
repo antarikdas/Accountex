@@ -8,6 +8,10 @@ interface AccountDao {
     @Query("SELECT * FROM accounts")
     fun getAllAccounts(): Flow<List<Account>>
 
+    // NEW: Synchronous fetch for Backup
+    @Query("SELECT * FROM accounts")
+    fun getAllAccountsSync(): List<Account>
+
     @Query("SELECT * FROM accounts WHERE id = :id")
     suspend fun getAccountById(id: Int): Account?
 

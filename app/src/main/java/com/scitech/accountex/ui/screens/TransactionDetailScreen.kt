@@ -25,6 +25,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -161,6 +163,23 @@ fun TransactionDetailScreen(
                 CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
             } else {
                 val tx = transaction!!
+
+                // --- DYNAMIC THEME COLOR ---
+                val mainColor = when (tx.type) {
+                    TransactionType.EXPENSE -> MaterialTheme.colorScheme.error
+                    TransactionType.INCOME -> MaterialTheme.colorScheme.primary
+                    else -> Color(0xFFFFA000) // Amber for Third Party
+                }
+
+                // --- TYPE LABEL TEXT ---
+                val typeLabel = when(tx.type) {
+                    TransactionType.INCOME -> "Income"
+                    TransactionType.EXPENSE -> "Expense"
+                    TransactionType.THIRD_PARTY_IN -> "Held for Others"
+                    TransactionType.THIRD_PARTY_OUT -> "Handed Over"
+                    else -> "Transfer"
+                }
+
                 Column(
                     modifier = Modifier.fillMaxSize().padding(24.dp).verticalScroll(rememberScrollState()),
                     horizontalAlignment = Alignment.CenterHorizontally
@@ -182,8 +201,22 @@ fun TransactionDetailScreen(
                             formatCurrency(tx.amount),
                             style = MaterialTheme.typography.displayMedium,
                             fontWeight = FontWeight.Bold,
-                            color = if (tx.type == TransactionType.EXPENSE) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                            color = mainColor // Applied Dynamic Color
                         )
+                        // Type Badge
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Surface(
+                            color = mainColor.copy(alpha = 0.1f),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text(
+                                typeLabel,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = mainColor,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                            )
+                        }
                     }
                     Spacer(modifier = Modifier.height(32.dp))
 
@@ -194,9 +227,16 @@ fun TransactionDetailScreen(
                     ) {
                         Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
 
-                            // Category (Editable)
+                            // 1. Related Party (Only if Third Party)
+                            if (!tx.thirdPartyName.isNullOrEmpty()) {
+                                DetailRow(Icons.Rounded.Person, "Related Party", tx.thirdPartyName, mainColor)
+                            } else if (tx.type == TransactionType.THIRD_PARTY_IN || tx.type == TransactionType.THIRD_PARTY_OUT) {
+                                DetailRow(Icons.Rounded.Info, "Status", "No Name Record", mainColor)
+                            }
+
+                            // 2. Category (Editable)
                             if (isEditing) {
-                                EditInputWrapper(label = "Category", icon = Icons.Default.Category) {
+                                EditInputWrapper(label = "Category", icon = Icons.Default.Category, color = mainColor) {
                                     SmartInput(
                                         value = editCategory,
                                         onValueChange = { editCategory = it },
@@ -205,10 +245,10 @@ fun TransactionDetailScreen(
                                     )
                                 }
                             } else {
-                                DetailRow(Icons.Default.Category, "Category", tx.category)
+                                DetailRow(Icons.Default.Category, "Category", tx.category, mainColor)
                             }
 
-                            // Date (Editable)
+                            // 3. Date (Editable)
                             Row(
                                 modifier = Modifier.fillMaxWidth().clickable(enabled = isEditing) {
                                     val c = Calendar.getInstance().apply { timeInMillis = editDate }
@@ -216,18 +256,18 @@ fun TransactionDetailScreen(
                                 },
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Box(Modifier.size(48.dp).background(MaterialTheme.colorScheme.primary.copy(0.1f), CircleShape), Alignment.Center) { Icon(Icons.Default.CalendarToday, null, tint = MaterialTheme.colorScheme.primary) }
+                                Box(Modifier.size(48.dp).background(mainColor.copy(0.1f), CircleShape), Alignment.Center) { Icon(Icons.Default.CalendarToday, null, tint = mainColor) }
                                 Spacer(Modifier.width(16.dp))
                                 Column {
                                     Text("Date & Time", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
-                                    Text(if(isEditing) SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault()).format(Date(editDate)) else formatDate(tx.date), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = if(isEditing) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+                                    Text(if(isEditing) SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault()).format(Date(editDate)) else formatDate(tx.date), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = if(isEditing) mainColor else MaterialTheme.colorScheme.onSurface)
                                 }
-                                if(isEditing) { Spacer(Modifier.weight(1f)); Icon(Icons.Outlined.Edit, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)) }
+                                if(isEditing) { Spacer(Modifier.weight(1f)); Icon(Icons.Outlined.Edit, null, tint = mainColor, modifier = Modifier.size(16.dp)) }
                             }
 
-                            // Description (Editable)
+                            // 4. Description (Editable)
                             if (isEditing) {
-                                EditInputWrapper(label = "Description", icon = Icons.Default.Description) {
+                                EditInputWrapper(label = "Description", icon = Icons.Default.Description, color = mainColor) {
                                     SmartInput(
                                         value = editDescription,
                                         onValueChange = { editDescription = it },
@@ -236,7 +276,7 @@ fun TransactionDetailScreen(
                                     )
                                 }
                             } else if (tx.description.isNotEmpty()) {
-                                DetailRow(Icons.Default.Description, "Description", tx.description)
+                                DetailRow(Icons.Default.Description, "Description", tx.description, mainColor)
                             }
                         }
                     }
@@ -262,10 +302,9 @@ fun TransactionDetailScreen(
             title = { Text(if (isAddMode) "Add New Attachment" else "Manage Attachment") },
             text = {
                 Column {
-                    // Option 1: Take Photo
                     ListItem(
                         headlineContent = { Text(if (isAddMode) "Take New Photo" else "Replace with Camera Photo") },
-                        leadingContent = { Icon(Icons.Default.CameraAlt, null) }, // FIXED: Stable Icon
+                        leadingContent = { Icon(Icons.Default.CameraAlt, null) },
                         modifier = Modifier.clickable {
                             if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
                                 val (file, uri) = createImageFile(context)
@@ -276,15 +315,13 @@ fun TransactionDetailScreen(
                             }
                         }
                     )
-                    // Option 2: Choose from Gallery
                     ListItem(
-                        headlineContent = { Text(if (isAddMode) "Choose from Gallery" else "Replace with Gallery Photo") },
-                        leadingContent = { Icon(Icons.Default.Collections, null) }, // FIXED: Stable Icon
+                        headlineContent = { Text("Choose from Gallery") },
+                        leadingContent = { Icon(Icons.Default.Collections, null) },
                         modifier = Modifier.clickable {
                             galleryLauncher.launch("image/*")
                         }
                     )
-                    // Option 3: Delete
                     if (!isAddMode) {
                         ListItem(
                             headlineContent = { Text("Delete Photo") },
@@ -341,7 +378,7 @@ private fun ImageGallerySection(
                 shape = RoundedCornerShape(12.dp),
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
             ) {
-                Icon(Icons.Default.Add, null, modifier = Modifier.size(20.dp)) // FIXED: Stable Icon
+                Icon(Icons.Default.Add, null, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(8.dp))
                 Text("Add")
             }
@@ -401,11 +438,11 @@ private fun createImageFile(context: Context): Pair<File, Uri> {
 }
 
 @Composable
-fun EditInputWrapper(label: String, icon: ImageVector, content: @Composable () -> Unit) {
+fun EditInputWrapper(label: String, icon: ImageVector, color: Color, content: @Composable () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(48.dp).background(MaterialTheme.colorScheme.primary.copy(0.1f), CircleShape), Alignment.Center) {
-                Icon(icon, null, tint = MaterialTheme.colorScheme.primary)
+            Box(Modifier.size(48.dp).background(color.copy(0.1f), CircleShape), Alignment.Center) {
+                Icon(icon, null, tint = color)
             }
             Spacer(Modifier.width(16.dp))
             Text(label, style = MaterialTheme.typography.labelSmall, color = Color.Gray)
@@ -415,9 +452,9 @@ fun EditInputWrapper(label: String, icon: ImageVector, content: @Composable () -
 }
 
 @Composable
-fun DetailRow(icon: ImageVector, label: String, value: String) {
+fun DetailRow(icon: ImageVector, label: String, value: String, tint: Color) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(48.dp).background(MaterialTheme.colorScheme.primary.copy(0.1f), CircleShape), Alignment.Center) { Icon(icon, null, tint = MaterialTheme.colorScheme.primary) }
+        Box(Modifier.size(48.dp).background(tint.copy(0.1f), CircleShape), Alignment.Center) { Icon(icon, null, tint = tint) }
         Spacer(Modifier.width(16.dp))
         Column {
             Text(label, style = MaterialTheme.typography.labelSmall, color = Color.Gray)

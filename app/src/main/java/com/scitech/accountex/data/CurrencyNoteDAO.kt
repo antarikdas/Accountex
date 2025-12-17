@@ -9,6 +9,10 @@ interface CurrencyNoteDao {
     @Query("SELECT * FROM currency_notes WHERE spentTransactionId IS NULL AND accountId = :accountId ORDER BY denomination DESC")
     fun getActiveNotesByAccount(accountId: Int): Flow<List<CurrencyNote>>
 
+    // NEW: Synchronous fetch for Backup (Fetches ALL notes, history included)
+    @Query("SELECT * FROM currency_notes")
+    fun getAllNotesSync(): List<CurrencyNote>
+
     // 2. ONLY PERSONAL NOTES (For Standard Expenses - "Your Money")
     @Query("SELECT * FROM currency_notes WHERE spentTransactionId IS NULL AND accountId = :accountId AND isThirdParty = 0 ORDER BY denomination DESC")
     fun getActivePersonalNotes(accountId: Int): Flow<List<CurrencyNote>>
