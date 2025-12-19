@@ -37,7 +37,8 @@ enum class Screen {
     NoteInventory,
     Templates,
     TransactionDetail,
-    ManageAccounts // <--- Added New Screen
+    ManageAccounts,
+    Backup // <--- 1. ADDED BACKUP SCREEN
 }
 
 @Composable
@@ -52,7 +53,8 @@ fun AccountexApp() {
     val analyticsViewModel: AnalyticsViewModel = viewModel()
     val noteInventoryViewModel: NoteInventoryViewModel = viewModel()
     val templateViewModel: TemplateViewModel = viewModel()
-    val manageAccountsViewModel: ManageAccountsViewModel = viewModel() // <--- Added New ViewModel
+    val manageAccountsViewModel: ManageAccountsViewModel = viewModel()
+    val dataManagementViewModel: DataManagementViewModel = viewModel() // <--- 2. ADDED BACKUP VIEWMODEL
 
     // 4. Navigation Logic
     when (currentScreen) {
@@ -67,7 +69,8 @@ fun AccountexApp() {
                     selectedTransactionId = id
                     currentScreen = Screen.TransactionDetail
                 },
-                onManageAccountsClick = { currentScreen = Screen.ManageAccounts }, // <--- Connected Logic
+                onManageAccountsClick = { currentScreen = Screen.ManageAccounts },
+                onNavigateToBackup = { currentScreen = Screen.Backup }, // <--- 3. CONNECTED THE BRIDGE
                 context = androidx.compose.ui.platform.LocalContext.current
             )
         }
@@ -85,7 +88,6 @@ fun AccountexApp() {
                 viewModel = templateViewModel,
                 onNavigateBack = { currentScreen = Screen.Dashboard },
                 onTemplateSelect = { template ->
-                    // Pre-fill the Add Transaction form with the selected template
                     addTransactionViewModel.applyTemplate(template)
                     currentScreen = Screen.AddTransaction
                 }
@@ -102,7 +104,6 @@ fun AccountexApp() {
         Screen.TransactionDetail -> {
             TransactionDetailScreen(
                 transactionId = selectedTransactionId,
-                // viewModel is auto-created inside the screen
                 onNavigateBack = { currentScreen = Screen.Dashboard }
             )
         }
@@ -114,9 +115,16 @@ fun AccountexApp() {
             )
         }
 
-        Screen.ManageAccounts -> { // <--- Added Screen Case
+        Screen.ManageAccounts -> {
             ManageAccountsScreen(
                 viewModel = manageAccountsViewModel,
+                onNavigateBack = { currentScreen = Screen.Dashboard }
+            )
+        }
+
+        Screen.Backup -> { // <--- 4. ADDED BACKUP SCREEN UI
+            DataManagementScreen(
+                viewModel = dataManagementViewModel,
                 onNavigateBack = { currentScreen = Screen.Dashboard }
             )
         }

@@ -9,7 +9,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme // <-- CORRECT IMPORT
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
+import androidx.compose.material.icons.rounded.CloudUpload // Added for Backup
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -31,8 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.scitech.accountex.data.Account
-import com.scitech.accountex.data.AccountType // <-- Base Import
-import com.scitech.accountex.data.AccountType.* // <-- STATIC IMPORT FIX: Resolves CASH, BANK, CARD
+import com.scitech.accountex.data.AccountType
 import com.scitech.accountex.data.Transaction
 import com.scitech.accountex.data.TransactionType
 import com.scitech.accountex.utils.formatCurrency
@@ -49,11 +49,14 @@ fun DashboardScreen(
     onNoteInventoryClick: () -> Unit,
     onTransactionClick: (Int) -> Unit,
     onManageAccountsClick: () -> Unit,
+    onNavigateToBackup: () -> Unit, // <--- 1. ADDED BACKUP PARAMETER
     context: Context
 ) {
+    // Correctly collecting individual flows from your ViewModel
     val accounts by viewModel.accounts.collectAsState()
     val transactions by viewModel.transactions.collectAsState()
     val todaySummary by viewModel.todaySummary.collectAsState()
+
     var showMenu by remember { mutableStateOf(false) }
 
     // -- Permission Logic --
@@ -102,13 +105,13 @@ fun DashboardScreen(
                         .padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 40.dp)
                 ) {
                     Column {
-                        // Top Row: Title & Menu
+                        // Top Row: Title, Backup, & Menu
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column {
+                            Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     "Welcome Back,",
                                     style = MaterialTheme.typography.titleSmall,
@@ -121,12 +124,26 @@ fun DashboardScreen(
                                     color = MaterialTheme.colorScheme.onPrimary
                                 )
                             }
-                            Box {
-                                IconButton(onClick = { showMenu = true }) {
-                                    Icon(Icons.Default.MoreVert, "Menu", tint = MaterialTheme.colorScheme.onPrimary)
+
+                            // Buttons Row
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                // 2. BACKUP BUTTON (Added Here)
+                                IconButton(onClick = onNavigateToBackup) {
+                                    Icon(
+                                        Icons.Rounded.CloudUpload,
+                                        contentDescription = "Backup",
+                                        tint = MaterialTheme.colorScheme.onPrimary
+                                    )
                                 }
-                                DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-                                    DropdownMenuItem(text = { Text("Export to Excel") }, onClick = { showMenu = false; requestExport() })
+
+                                // Menu Box
+                                Box {
+                                    IconButton(onClick = { showMenu = true }) {
+                                        Icon(Icons.Default.MoreVert, "Menu", tint = MaterialTheme.colorScheme.onPrimary)
+                                    }
+                                    DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                                        DropdownMenuItem(text = { Text("Export to Excel") }, onClick = { showMenu = false; requestExport() })
+                                    }
                                 }
                             }
                         }
@@ -183,7 +200,7 @@ fun DashboardScreen(
                         }
                     }
 
-                    // ACCOUNTS LIST (Redesigned)
+                    // ACCOUNTS LIST
                     item {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -191,7 +208,7 @@ fun DashboardScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             SectionHeader("Your Accounts")
-                            TextButton(onClick = onManageAccountsClick) { // <--- Navigate to Manage
+                            TextButton(onClick = onManageAccountsClick) {
                                 Text("Manage", fontWeight = FontWeight.SemiBold)
                             }
                         }
@@ -213,35 +230,29 @@ fun DashboardScreen(
     }
 }
 
-// --- NEW COMPONENT FOR ACCOUNTS REDESIGN ---
-
-/**
- * Maps the account type/name to a visually distinct style.
- */
+// --- ACCOUNT STYLE LOGIC ---
 data class AccountStyle(val icon: ImageVector, val color: Color, val containerColor: Color)
 
 @Composable
 fun getAccountStyle(account: Account): AccountStyle {
     val isDark = isSystemInDarkTheme()
-    val CASH = null
-    val CARD = null
+
+    // Explicit color mapping based on AccountType ENUM
     val baseColor = when (account.type) {
-        CASH -> Color(0xFF66BB6A) // Green for Cash (RESOLVED by static import)
-        BANK -> Color(0xFF42A5F5) // Blue for Bank (RESOLVED by static import)
-        CARD -> Color(0xFFFFA726) // Orange for Card/Reserve (RESOLVED by static import)
-        else -> MaterialTheme.colorScheme.primary // Fallback
+        AccountType.CASH_DAILY -> Color(0xFF66BB6A) // Green
+        AccountType.BANK -> Color(0xFF42A5F5)       // Blue
+        AccountType.CASH_RESERVE -> Color(0xFFFFA726) // Orange
+        else -> MaterialTheme.colorScheme.primary
     }
 
     val icon = when (account.type) {
-        CASH -> Icons.Default.Money
-        BANK -> Icons.Default.AccountBalance
-        CARD -> Icons.Default.CreditCard
+        AccountType.CASH_DAILY -> Icons.Default.Money
+        AccountType.BANK -> Icons.Default.AccountBalance
+        AccountType.CASH_RESERVE -> Icons.Default.CreditCard
         else -> Icons.Default.AccountBalanceWallet
     }
 
-    // Adjust container color for better contrast
     val containerColor = if (isDark) baseColor.copy(alpha = 0.2f) else baseColor.copy(alpha = 0.1f)
-
     return AccountStyle(icon, baseColor, containerColor)
 }
 
@@ -252,22 +263,20 @@ fun NeoAccountCard(account: Account) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 100.dp) // Ensure minimum height
+            .heightIn(min = 100.dp)
             .padding(vertical = 4.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp), // Stronger elevation
-        shape = RoundedCornerShape(20.dp) // Larger radius for premium feel
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        shape = RoundedCornerShape(20.dp)
     ) {
         Column(
             modifier = Modifier.padding(20.dp),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // Top Section: Icon and Name
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Large, colored icon
                 Box(
                     modifier = Modifier
                         .size(48.dp)
@@ -282,9 +291,7 @@ fun NeoAccountCard(account: Account) {
                         modifier = Modifier.size(28.dp)
                     )
                 }
-
                 Spacer(modifier = Modifier.width(16.dp))
-
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         account.name,
@@ -299,10 +306,7 @@ fun NeoAccountCard(account: Account) {
                     )
                 }
             }
-
             Spacer(modifier = Modifier.height(16.dp))
-
-            // Bottom Section: Balance
             Text(
                 "Current Balance",
                 style = MaterialTheme.typography.labelSmall,
@@ -312,15 +316,14 @@ fun NeoAccountCard(account: Account) {
                 formatCurrency(account.balance),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.ExtraBold,
-                color = style.color, // Color coded balance
+                color = style.color,
                 letterSpacing = (-0.5).sp
             )
         }
     }
 }
 
-
-// --- EXISTING COMPONENTS (Moved to private fun) ---
+// --- HELPER COMPONENTS ---
 
 @Composable
 private fun MiniStat(label: String, amount: Double, isPositive: Boolean) {
@@ -384,9 +387,7 @@ private fun ModernTransactionItem(transaction: Transaction, onClick: () -> Unit)
                 tint = if (transaction.type == TransactionType.INCOME) Color(0xFF006C5B) else Color(0xFFBA1A1A)
             )
         }
-
         Spacer(modifier = Modifier.width(16.dp))
-
         Column(modifier = Modifier.weight(1f)) {
             Text(transaction.category, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
             Text(
@@ -395,7 +396,6 @@ private fun ModernTransactionItem(transaction: Transaction, onClick: () -> Unit)
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-
         Text(
             text = "${if (transaction.type == TransactionType.EXPENSE) "-" else "+"}${formatCurrency(transaction.amount)}",
             style = MaterialTheme.typography.titleMedium,
