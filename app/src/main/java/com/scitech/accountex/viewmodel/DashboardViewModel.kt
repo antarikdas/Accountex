@@ -20,7 +20,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     private val database = AppDatabase.getDatabase(application)
     private val accountDao = database.accountDao()
     private val transactionDao = database.transactionDao()
-    private val currencyNoteDao = database.currencyNoteDao() // <--- 1. ADD THIS
+    private val currencyNoteDao = database.currencyNoteDao()
 
     val accounts: StateFlow<List<Account>> = accountDao.getAllAccounts()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -28,9 +28,14 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     val transactions: StateFlow<List<Transaction>> = transactionDao.getAllTransactions()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // 2. NEW: Real-time Held Amount
+    // NEW: Held Amount for the Dashboard Card
     val heldAmount: StateFlow<Double> = currencyNoteDao.getGlobalHeldAmount()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
+
+    // FIX: Reactive Total Balance (Updates instantly)
+    val totalBalance: StateFlow<Double> = accounts.map { list ->
+        list.sumOf { it.balance }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
 
     val todaySummary: StateFlow<DailySummary> = transactions.map { txList ->
         val calendar = Calendar.getInstance()
@@ -38,27 +43,30 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         calendar.set(Calendar.MINUTE, 0)
         calendar.set(Calendar.SECOND, 0)
         val todayStart = calendar.timeInMillis
-
         val todayTransactions = txList.filter { it.date >= todayStart }
 
         val income = todayTransactions.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
         val expense = todayTransactions.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amount }
-
         DailySummary(income, expense)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DailySummary(0.0, 0.0))
 
-    // ... (Keep existing init, getTotalBalance, exportToExcel logic exactly as is) ...
+    init {
+        viewModelScope.launch {
+            val existingAccounts = accountDao.getAllAccounts().first()
+            if (existingAccounts.isEmpty()) {
+                accountDao.insertAccount(Account(name = "Bank Account", type = AccountType.BANK))
+                accountDao.insertAccount(Account(name = "Daily Cash", type = AccountType.CASH_DAILY))
+                accountDao.insertAccount(Account(name = "Cash Reserve", type = AccountType.CASH_RESERVE))
+            }
+        }
+    }
 
-    // Helper needed for existing code
+    // Kept for backward compatibility if needed, but UI should use totalBalance
     fun getTotalBalance(): Double {
         return accounts.value.sumOf { it.balance }
     }
 
-    // (Rest of the file remains unchanged)
-    // ...
-    // Just ensure the class ends correctly
     fun exportToExcel() {
-        // ... (Keep your existing export logic) ...
         viewModelScope.launch {
             try {
                 val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
@@ -69,17 +77,13 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                     val workbook = Workbook(outputStream, "Accountex", "1.0")
                     val worksheet = workbook.newWorksheet("Transactions")
 
-                    // Header row
                     val headers = listOf("Date", "Type", "Category", "Amount", "Account", "Description")
                     headers.forEachIndexed { index, header ->
                         worksheet.value(0, index, header)
                         worksheet.width(index, 20.0)
                     }
-
-                    // Style header
                     worksheet.range(0, 0, 0, headers.size - 1).style().bold().set()
 
-                    // Data rows
                     val sdf = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
                     transactions.value.forEachIndexed { index, transaction ->
                         val row = index + 1
@@ -92,10 +96,8 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                         worksheet.value(row, 4, account?.name ?: "N/A")
                         worksheet.value(row, 5, transaction.description)
                     }
-
                     workbook.finish()
                 }
-
                 shareFile(file)
             } catch (e: Exception) {
                 e.printStackTrace()
