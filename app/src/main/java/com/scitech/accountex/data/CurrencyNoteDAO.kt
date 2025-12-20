@@ -25,6 +25,10 @@ interface CurrencyNoteDao {
     @Query("SELECT COALESCE(SUM(amount), 0.0) FROM currency_notes WHERE spentTransactionId IS NULL AND accountId = :accountId AND isThirdParty = 1")
     fun getTotalHeldAmount(accountId: Int): Flow<Double>
 
+    // NEW: Calculate total third-party money currently in hand (Global)
+    @Query("SELECT COALESCE(SUM(amount), 0.0) FROM currency_notes WHERE isThirdParty = 1 AND spentTransactionId IS NULL")
+    fun getGlobalHeldAmount(): Flow<Double>
+
     // --- EXISTING QUERIES ---
 
     @Query("SELECT * FROM currency_notes WHERE serialNumber = :serial")

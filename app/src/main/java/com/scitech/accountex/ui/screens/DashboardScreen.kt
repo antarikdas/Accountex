@@ -56,6 +56,7 @@ fun DashboardScreen(
     val accounts by viewModel.accounts.collectAsState()
     val transactions by viewModel.transactions.collectAsState()
     val todaySummary by viewModel.todaySummary.collectAsState()
+    val heldAmount by viewModel.heldAmount.collectAsState()
 
     var showMenu by remember { mutableStateOf(false) }
 
@@ -186,6 +187,14 @@ fun DashboardScreen(
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(20.dp)
                 ) {
+
+                    // 2. NEW: CONDITIONAL HELD MONEY CARD
+                    // Only shows if there is actual money held (Prevent clutter)
+                    if (heldAmount > 0) {
+                        item {
+                            HeldMoneyCard(amount = heldAmount)
+                        }
+                    }
                     // QUICK ACTIONS
                     item {
                         SectionHeader("Quick Actions")
@@ -415,4 +424,48 @@ private fun SectionHeader(title: String) {
         color = MaterialTheme.colorScheme.onSurface,
         modifier = Modifier.padding(bottom = 8.dp)
     )
+}
+@Composable
+fun HeldMoneyCard(amount: Double) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = Color(0xFFFFF8E1), // Light Amber background
+        ),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFB300)), // Amber Border
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .background(Color(0xFFFFB300), CircleShape), // Amber Icon Bg
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Outlined.Info,
+                    contentDescription = null,
+                    tint = Color.White
+                )
+            }
+            Spacer(modifier = Modifier.width(16.dp))
+            Column {
+                Text(
+                    text = "Held for Others",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Color(0xFF6D4C41),
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = formatCurrency(amount),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFFE65100) // Deep Orange Text
+                )
+            }
+        }
+    }
 }
