@@ -11,7 +11,7 @@ import kotlinx.coroutines.launch
 import java.io.File
 import java.util.UUID
 
-data class DraftNote(val serial: String, val denomination: Int)
+data class DraftNote(val serial: String, val denomination: Int, val isCoin: Boolean = false)
 
 class AddTransactionViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -113,9 +113,21 @@ class AddTransactionViewModel(application: Application) : AndroidViewModel(appli
         _selectedNoteIds.value = current
     }
 
-    fun addIncomingNote(serial: String, denomination: Int) {
+    fun addIncomingNote(serial: String, denomination: Int, isCoin: Boolean) {
+        val finalSerial = if (isCoin) "COIN-${System.currentTimeMillis()}-${UUID.randomUUID().toString().take(6)}" else serial
         val current = _incomingNotes.value.toMutableList()
-        current.add(DraftNote(serial, denomination))
+        current.add(DraftNote(finalSerial, denomination, isCoin))
+        _incomingNotes.value = current
+    }
+
+    // NEW: Bulk Add Function for Coins
+    fun addBulkIncomingNotes(denomination: Int, count: Int, isCoin: Boolean) {
+        val newNotes = List(count) {
+            val serial = if (isCoin) "COIN-${System.currentTimeMillis()}-${UUID.randomUUID().toString().take(6)}" else ""
+            DraftNote(serial, denomination, isCoin)
+        }
+        val current = _incomingNotes.value.toMutableList()
+        current.addAll(newNotes)
         _incomingNotes.value = current
     }
 
@@ -132,75 +144,67 @@ class AddTransactionViewModel(application: Application) : AndroidViewModel(appli
         _incomingNotes.value = emptyList()
     }
 
-    // --- SAVE LOGIC (WITH IMAGE PERSISTENCE) ---
+    // --- SAVE LOGIC ---
     fun addTransaction(originalImageUris: List<String>) {
         val state = _uiState.value
         val amount = state.amountInput.toDoubleOrNull() ?: 0.0
 
         viewModelScope.launch {
-            // FIX: Save images to internal storage so they don't disappear
             val permanentImagePaths = saveImagesToInternalStorage(originalImageUris)
 
             val tx = Transaction(
                 type = state.selectedType,
                 amount = amount,
-                category = state.category,
+                category = if(state.selectedType == TransactionType.EXCHANGE) "Currency Exchange" else state.category,
                 description = state.description,
                 date = state.selectedDate,
                 accountId = state.selectedAccountId,
-                imageUris = permanentImagePaths, // Save the permanent paths
+                imageUris = permanentImagePaths,
                 thirdPartyName = state.thirdPartyName
             )
             val txId = transactionDao.insertTransaction(tx).toInt()
 
+            suspend fun insertIncomingNotes(isThirdParty: Boolean) {
+                _incomingNotes.value.forEach { draft ->
+                    noteDao.insertNote(CurrencyNote(
+                        serialNumber = draft.serial,
+                        amount = draft.denomination.toDouble(),
+                        denomination = draft.denomination,
+                        accountId = state.selectedAccountId,
+                        receivedTransactionId = txId,
+                        receivedDate = state.selectedDate,
+                        isThirdParty = isThirdParty,
+                        thirdPartyName = if(isThirdParty) state.thirdPartyName else null
+                    ))
+                }
+            }
+
+            suspend fun spendSelectedNotes() {
+                _selectedNoteIds.value.forEach { noteId ->
+                    noteDao.markAsSpent(noteId, txId, state.selectedDate)
+                }
+            }
+
             when (state.selectedType) {
                 TransactionType.INCOME -> {
-                    _incomingNotes.value.forEach { draft ->
-                        noteDao.insertNote(CurrencyNote(
-                            serialNumber = draft.serial,
-                            amount = draft.denomination.toDouble(),
-                            denomination = draft.denomination,
-                            accountId = state.selectedAccountId,
-                            receivedTransactionId = txId,
-                            receivedDate = state.selectedDate,
-                            isThirdParty = false
-                        ))
-                    }
+                    insertIncomingNotes(isThirdParty = false)
                     accountDao.updateBalance(state.selectedAccountId, amount)
                 }
                 TransactionType.EXPENSE -> {
-                    _selectedNoteIds.value.forEach { noteId -> noteDao.markAsSpent(noteId, txId, state.selectedDate) }
-                    _incomingNotes.value.forEach { draft ->
-                        noteDao.insertNote(CurrencyNote(
-                            serialNumber = draft.serial,
-                            amount = draft.denomination.toDouble(),
-                            denomination = draft.denomination,
-                            accountId = state.selectedAccountId,
-                            receivedTransactionId = txId,
-                            receivedDate = state.selectedDate,
-                            isThirdParty = false
-                        ))
-                    }
+                    spendSelectedNotes()
+                    insertIncomingNotes(isThirdParty = false)
                     accountDao.updateBalance(state.selectedAccountId, -amount)
                 }
                 TransactionType.THIRD_PARTY_IN -> {
-                    _incomingNotes.value.forEach { draft ->
-                        noteDao.insertNote(CurrencyNote(
-                            serialNumber = draft.serial,
-                            amount = draft.denomination.toDouble(),
-                            denomination = draft.denomination,
-                            accountId = state.selectedAccountId,
-                            receivedTransactionId = txId,
-                            receivedDate = state.selectedDate,
-                            isThirdParty = true,
-                            thirdPartyName = state.thirdPartyName
-                        ))
-                    }
+                    insertIncomingNotes(isThirdParty = true)
                 }
                 TransactionType.THIRD_PARTY_OUT -> {
-                    _selectedNoteIds.value.forEach { noteId -> noteDao.markAsSpent(noteId, txId, state.selectedDate) }
+                    spendSelectedNotes()
                 }
-                else -> {}
+                TransactionType.EXCHANGE -> {
+                    spendSelectedNotes()
+                    insertIncomingNotes(isThirdParty = false)
+                }
             }
 
             _uiState.value = TransactionFormState()
@@ -208,11 +212,9 @@ class AddTransactionViewModel(application: Application) : AndroidViewModel(appli
         }
     }
 
-    // --- IMAGE HELPER FUNCTION ---
     private fun saveImagesToInternalStorage(uris: List<String>): List<String> {
         val context = getApplication<Application>()
         val savedPaths = mutableListOf<String>()
-
         for (uriString in uris) {
             try {
                 if (uriString.contains("com.scitech.accountex")) {
@@ -223,17 +225,12 @@ class AddTransactionViewModel(application: Application) : AndroidViewModel(appli
                 val inputStream = context.contentResolver.openInputStream(uri)
                 val folder = File(context.filesDir, "Accountex_Images")
                 if (!folder.exists()) folder.mkdirs()
-
                 val newFile = File(folder, "IMG_${UUID.randomUUID()}.jpg")
                 inputStream?.use { input ->
-                    newFile.outputStream().use { output ->
-                        input.copyTo(output)
-                    }
+                    newFile.outputStream().use { output -> input.copyTo(output) }
                 }
                 savedPaths.add(Uri.fromFile(newFile).toString())
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+            } catch (e: Exception) { e.printStackTrace() }
         }
         return savedPaths
     }
