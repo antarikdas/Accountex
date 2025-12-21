@@ -13,8 +13,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.BufferedReader
-import java.io.InputStreamReader
+import java.io.*
+import java.util.zip.ZipEntry
+import java.util.zip.ZipInputStream
+import java.util.zip.ZipOutputStream
 
 class DataManagementViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -22,17 +24,17 @@ class DataManagementViewModel(application: Application) : AndroidViewModel(appli
     private val accountDao = database.accountDao()
     private val transactionDao = database.transactionDao()
     private val noteDao = database.currencyNoteDao()
+    private val context = application
 
     private val _uiState = MutableStateFlow(DataManagementState())
     val uiState: StateFlow<DataManagementState> = _uiState.asStateFlow()
 
-    // --- EXPORT LOGIC ---
+    // --- EXPORT (ZIP: JSON + IMAGES) ---
     fun exportData(uri: Uri) {
         viewModelScope.launch {
-            _uiState.value = DataManagementState(isLoading = true, statusMessage = "Preparing Backup...")
+            _uiState.value = DataManagementState(isLoading = true, statusMessage = "Packing Images & Data...")
             try {
-                val jsonString = generateBackupJson()
-                writeJsonToFile(uri, jsonString)
+                createZipBackup(uri)
                 _uiState.value = DataManagementState(isLoading = false, statusMessage = "Backup Successful!", isSuccess = true)
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -41,26 +43,33 @@ class DataManagementViewModel(application: Application) : AndroidViewModel(appli
         }
     }
 
-    private suspend fun generateBackupJson(): String = withContext(Dispatchers.IO) {
+    private suspend fun createZipBackup(uri: Uri) = withContext(Dispatchers.IO) {
+        // 1. Fetch Raw Data
+        val accounts = accountDao.getAllAccountsSync()
+        val rawTransactions = transactionDao.getAllTransactionsSync()
+        val notes = noteDao.getAllNotesSync()
+
+        // 2. Prepare JSON Object
         val root = JSONObject()
 
-        // 1. Export Accounts
-        val accounts = accountDao.getAllAccountsSync()
+        // A. Accounts
         val accArray = JSONArray()
         accounts.forEach { acc ->
             val obj = JSONObject()
             obj.put("id", acc.id)
             obj.put("name", acc.name)
             obj.put("balance", acc.balance)
-            obj.put("type", acc.type.name) // Save Enum name as String
+            obj.put("type", acc.type.name)
             accArray.put(obj)
         }
         root.put("accounts", accArray)
 
-        // 2. Export Transactions
-        val transactions = transactionDao.getAllTransactionsSync()
+        // B. Transactions (Sanitize Paths)
         val txArray = JSONArray()
-        transactions.forEach { tx ->
+        val imagesToZip = mutableListOf<File>()
+        val imagesDir = File(context.filesDir, "Accountex_Images")
+
+        rawTransactions.forEach { tx ->
             val obj = JSONObject()
             obj.put("id", tx.id)
             obj.put("type", tx.type.name)
@@ -70,19 +79,27 @@ class DataManagementViewModel(application: Application) : AndroidViewModel(appli
             obj.put("description", tx.description)
             obj.put("accountId", tx.accountId)
             if (tx.toAccountId != null) obj.put("toAccountId", tx.toAccountId)
-
-            val imgArray = JSONArray()
-            tx.imageUris.forEach { imgArray.put(it) }
-            obj.put("imageUris", imgArray)
-
             if (tx.thirdPartyName != null) obj.put("thirdPartyName", tx.thirdPartyName)
 
+            // Handle Images: Save only the FILENAME, not the full path
+            val imgArray = JSONArray()
+            tx.imageUris.forEach { uriStr ->
+                val file = File(uriStr)
+                val fileName = file.name
+                imgArray.put(fileName) // Store "IMG_123.jpg"
+
+                // Add to list if it exists in our app storage
+                val actualFile = File(imagesDir, fileName)
+                if (actualFile.exists()) {
+                    imagesToZip.add(actualFile)
+                }
+            }
+            obj.put("imageFilenames", imgArray) // Changed key to indicate it's just names
             txArray.put(obj)
         }
         root.put("transactions", txArray)
 
-        // 3. Export Currency Notes
-        val notes = noteDao.getAllNotesSync()
+        // C. Notes
         val noteArray = JSONArray()
         notes.forEach { note ->
             val obj = JSONObject()
@@ -95,33 +112,45 @@ class DataManagementViewModel(application: Application) : AndroidViewModel(appli
             if (note.spentTransactionId != null) obj.put("spentTransactionId", note.spentTransactionId)
             obj.put("receivedDate", note.receivedDate)
             if (note.spentDate != null) obj.put("spentDate", note.spentDate)
-
             obj.put("isThirdParty", note.isThirdParty)
             if (note.thirdPartyName != null) obj.put("thirdPartyName", note.thirdPartyName)
-
             noteArray.put(obj)
         }
         root.put("currency_notes", noteArray)
-
         root.put("version", 1)
         root.put("timestamp", System.currentTimeMillis())
 
-        return@withContext root.toString(4)
-    }
+        // 3. Write ZIP File
+        context.contentResolver.openOutputStream(uri)?.use { outputStream ->
+            ZipOutputStream(BufferedOutputStream(outputStream)).use { zipOut ->
+                // Entry 1: The JSON Data
+                zipOut.putNextEntry(ZipEntry("backup_data.json"))
+                zipOut.write(root.toString(4).toByteArray())
+                zipOut.closeEntry()
 
-    private suspend fun writeJsonToFile(uri: Uri, json: String) = withContext(Dispatchers.IO) {
-        getApplication<Application>().contentResolver.openOutputStream(uri)?.use { outputStream ->
-            outputStream.write(json.toByteArray())
+                // Entry 2...N: The Images
+                // Use a set to avoid duplicates if one image is used in multiple places
+                imagesToZip.distinctBy { it.name }.forEach { imgFile ->
+                    try {
+                        zipOut.putNextEntry(ZipEntry("images/${imgFile.name}"))
+                        FileInputStream(imgFile).use { input ->
+                            input.copyTo(zipOut)
+                        }
+                        zipOut.closeEntry()
+                    } catch (e: Exception) {
+                        e.printStackTrace() // Skip failed images
+                    }
+                }
+            }
         }
     }
 
-    // --- IMPORT LOGIC ---
+    // --- IMPORT (ZIP) ---
     fun importData(uri: Uri) {
         viewModelScope.launch {
-            _uiState.value = DataManagementState(isLoading = true, statusMessage = "Reading Backup...")
+            _uiState.value = DataManagementState(isLoading = true, statusMessage = "Unpacking & Restoring...")
             try {
-                val jsonString = readJsonFromFile(uri)
-                restoreBackup(jsonString)
+                restoreZipBackup(uri)
                 _uiState.value = DataManagementState(isLoading = false, statusMessage = "Restore Complete!", isSuccess = true)
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -130,26 +159,44 @@ class DataManagementViewModel(application: Application) : AndroidViewModel(appli
         }
     }
 
-    private suspend fun readJsonFromFile(uri: Uri): String = withContext(Dispatchers.IO) {
-        val stringBuilder = StringBuilder()
-        getApplication<Application>().contentResolver.openInputStream(uri)?.use { inputStream ->
-            BufferedReader(InputStreamReader(inputStream)).use { reader ->
-                var line: String? = reader.readLine()
-                while (line != null) {
-                    stringBuilder.append(line)
-                    line = reader.readLine()
+    private suspend fun restoreZipBackup(uri: Uri) = withContext(Dispatchers.IO) {
+        val imagesDir = File(context.filesDir, "Accountex_Images")
+        if (!imagesDir.exists()) imagesDir.mkdirs()
+
+        var jsonString: String? = null
+
+        // 1. Unzip Logic
+        context.contentResolver.openInputStream(uri)?.use { inputStream ->
+            ZipInputStream(BufferedInputStream(inputStream)).use { zipIn ->
+                var entry = zipIn.nextEntry
+                while (entry != null) {
+                    val entryName = entry.name
+
+                    if (entryName == "backup_data.json") {
+                        // Read JSON
+                        val bytes = zipIn.readBytes()
+                        jsonString = String(bytes)
+                    } else if (entryName.startsWith("images/")) {
+                        // Extract Image
+                        val fileName = File(entryName).name
+                        val outFile = File(imagesDir, fileName)
+                        FileOutputStream(outFile).use { output ->
+                            zipIn.copyTo(output)
+                        }
+                    }
+                    zipIn.closeEntry()
+                    entry = zipIn.nextEntry
                 }
             }
         }
-        return@withContext stringBuilder.toString()
-    }
 
-    private suspend fun restoreBackup(jsonString: String) = withContext(Dispatchers.IO) {
-        val root = JSONObject(jsonString)
+        if (jsonString == null) throw Exception("Invalid Backup: No 'backup_data.json' found inside ZIP.")
 
+        // 2. Parse JSON & Insert to DB
+        val root = JSONObject(jsonString!!)
         database.clearAllTables()
 
-        // 2. Restore Accounts
+        // Accounts
         val accArray = root.getJSONArray("accounts")
         for (i in 0 until accArray.length()) {
             val obj = accArray.getJSONObject(i)
@@ -157,22 +204,28 @@ class DataManagementViewModel(application: Application) : AndroidViewModel(appli
                 id = obj.getInt("id"),
                 name = obj.getString("name"),
                 balance = obj.getDouble("balance"),
-                // FIXED: Convert String back to Enum
                 type = AccountType.valueOf(obj.getString("type"))
             )
             accountDao.insertAccount(acc)
         }
 
-        // 3. Restore Transactions
+        // Transactions
         val txArray = root.getJSONArray("transactions")
         for (i in 0 until txArray.length()) {
             val obj = txArray.getJSONObject(i)
 
-            val imgJsonArray = obj.optJSONArray("imageUris")
+            // Reconstruct Absolute Paths
+            // Check both "imageFilenames" (New Format) and "imageUris" (Legacy Format compatibility)
             val imgList = mutableListOf<String>()
-            if (imgJsonArray != null) {
-                for (j in 0 until imgJsonArray.length()) {
-                    imgList.add(imgJsonArray.getString(j))
+            val jsonImages = if (obj.has("imageFilenames")) obj.getJSONArray("imageFilenames") else obj.optJSONArray("imageUris")
+
+            if (jsonImages != null) {
+                for (j in 0 until jsonImages.length()) {
+                    val rawVal = jsonImages.getString(j)
+                    // If it's just a filename, prepend the local path. If it looks like a path, keep it (legacy).
+                    val fileName = File(rawVal).name
+                    val localUri = Uri.fromFile(File(imagesDir, fileName)).toString()
+                    imgList.add(localUri)
                 }
             }
 
@@ -186,13 +239,12 @@ class DataManagementViewModel(application: Application) : AndroidViewModel(appli
                 accountId = obj.getInt("accountId"),
                 toAccountId = if (obj.has("toAccountId")) obj.getInt("toAccountId") else null,
                 imageUris = imgList,
-                // FIXED: Safe nullable retrieval
                 thirdPartyName = if (obj.has("thirdPartyName")) obj.getString("thirdPartyName") else null
             )
             transactionDao.insertTransaction(tx)
         }
 
-        // 4. Restore Notes
+        // Notes
         val noteArray = root.optJSONArray("currency_notes")
         if (noteArray != null) {
             for (i in 0 until noteArray.length()) {
@@ -208,7 +260,6 @@ class DataManagementViewModel(application: Application) : AndroidViewModel(appli
                     receivedDate = obj.getLong("receivedDate"),
                     spentDate = if (obj.has("spentDate")) obj.getLong("spentDate") else null,
                     isThirdParty = obj.optBoolean("isThirdParty", false),
-                    // FIXED: Safe nullable retrieval
                     thirdPartyName = if (obj.has("thirdPartyName")) obj.getString("thirdPartyName") else null
                 )
                 noteDao.insertNote(note)
@@ -216,9 +267,7 @@ class DataManagementViewModel(application: Application) : AndroidViewModel(appli
         }
     }
 
-    fun resetState() {
-        _uiState.value = DataManagementState()
-    }
+    fun resetState() { _uiState.value = DataManagementState() }
 }
 
 data class DataManagementState(

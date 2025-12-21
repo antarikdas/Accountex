@@ -1,139 +1,86 @@
 package com.scitech.accountex.viewmodel
 
 import android.app.Application
+import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.scitech.accountex.data.*
+import com.scitech.accountex.data.AppDatabase
+import com.scitech.accountex.data.TransactionType
 import kotlinx.coroutines.flow.*
-import java.text.SimpleDateFormat
 import java.util.*
 
 class AnalyticsViewModel(application: Application) : AndroidViewModel(application) {
+    private val dao = AppDatabase.getDatabase(application).transactionDao()
 
-    private val database = AppDatabase.getDatabase(application)
-    private val transactionDao = database.transactionDao()
+    // 1. Time Filter
+    private val _timeRange = MutableStateFlow(TimeRange.THIS_MONTH)
+    val timeRange = _timeRange.asStateFlow()
 
-    val transactions: StateFlow<List<Transaction>> = transactionDao.getAllTransactions()
+    // 2. Raw Data
+    private val _allTransactions = dao.getAllTransactions()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    private val _selectedPeriod = MutableStateFlow(AnalyticsPeriod.THIS_MONTH)
-    val selectedPeriod: StateFlow<AnalyticsPeriod> = _selectedPeriod.asStateFlow()
+    // 3. Processed Data for UI
+    val analyticsState = combine(_allTransactions, _timeRange) { list, range ->
+        // Filter by Date
+        val filtered = list.filter { isInRange(it.date, range) }
 
-    val periodSummary: StateFlow<PeriodSummary> = combine(
-        transactions,
-        selectedPeriod
-    ) { txList, period ->
-        val (startDate, endDate) = getDateRange(period)
+        // A. Totals
+        val income = filtered.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
+        val expense = filtered.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amount }
 
-        // 1. Filter by Date AND Exclude Third Party for Financial Stats
-        val relevantTx = txList.filter {
-            it.date in startDate..endDate &&
-                    (it.type == TransactionType.INCOME || it.type == TransactionType.EXPENSE)
-        }
-
-        val income = relevantTx.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
-        val expense = relevantTx.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amount }
-
-        // 2. Category Breakdown (For Pie Chart)
-        val categoryBreakdown = relevantTx
+        // B. Category Breakdown (for Pie Chart)
+        val categories = filtered
             .filter { it.type == TransactionType.EXPENSE }
             .groupBy { it.category }
-            .mapValues { (_, txs) -> txs.sumOf { it.amount } }
-            .toList()
-            .sortedByDescending { it.second }
-
-        // 3. Dynamic Graph Logic (Bar/Line Chart)
-        val graphPattern = when (period) {
-            AnalyticsPeriod.THIS_WEEK -> "EEE" // Mon, Tue
-            AnalyticsPeriod.THIS_MONTH -> "dd" // 01, 05
-            AnalyticsPeriod.THIS_YEAR -> "MMM" // Jan, Feb
-            AnalyticsPeriod.ALL_TIME -> "yyyy" // 2024, 2025
-            AnalyticsPeriod.TODAY -> "hh a"    // 10 AM, 11 AM
-        }
-
-        val dateFormatter = SimpleDateFormat(graphPattern, Locale.getDefault())
-
-        val graphData = relevantTx
-            .filter { it.type == TransactionType.EXPENSE } // We usually graph expenses
-            .groupBy {
-                // Group by the formatted label
-                dateFormatter.format(Date(it.date))
-            }
-            .map { (label, txs) ->
-                // We need to keep a representative date for sorting,
-                // otherwise "Apr" comes before "Jan" alphabetically.
-                val firstTxDate = txs.first().date
-                Triple(label, txs.sumOf { it.amount }, firstTxDate)
-            }
-            .sortedBy { it.third } // Sort Chronologically
-            .map { it.first to it.second } // Map back to Label -> Amount
-
-        val topExpenses = relevantTx
-            .filter { it.type == TransactionType.EXPENSE }
+            .map { (cat, txs) -> CategoryData(cat, txs.sumOf { it.amount }) }
             .sortedByDescending { it.amount }
-            .take(5)
+            .take(5) // Top 5 Categories only
 
-        PeriodSummary(
-            income = income,
-            expense = expense,
-            categoryBreakdown = categoryBreakdown,
-            graphData = graphData,
-            topExpenses = topExpenses,
-            transactionCount = relevantTx.size
-        )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), PeriodSummary())
-
-    fun setPeriod(period: AnalyticsPeriod) {
-        _selectedPeriod.value = period
-    }
-
-    private fun getDateRange(period: AnalyticsPeriod): Pair<Long, Long> {
-        val calendar = Calendar.getInstance()
-        // End date is effectively "now" (or end of today if you prefer inclusive filtering)
-        // Setting to end of today to catch any future-dated txs for today
-        calendar.set(Calendar.HOUR_OF_DAY, 23)
-        calendar.set(Calendar.MINUTE, 59)
-        val endDate = calendar.timeInMillis
-
-        // Reset for Start Date
-        calendar.set(Calendar.HOUR_OF_DAY, 0)
-        calendar.set(Calendar.MINUTE, 0)
-        calendar.set(Calendar.SECOND, 0)
-        calendar.set(Calendar.MILLISECOND, 0)
-
-        val startDate = when (period) {
-            AnalyticsPeriod.TODAY -> calendar.timeInMillis
-            AnalyticsPeriod.THIS_WEEK -> {
-                calendar.set(Calendar.DAY_OF_WEEK, calendar.firstDayOfWeek)
-                calendar.timeInMillis
-            }
-            AnalyticsPeriod.THIS_MONTH -> {
-                calendar.set(Calendar.DAY_OF_MONTH, 1)
-                calendar.timeInMillis
-            }
-            AnalyticsPeriod.THIS_YEAR -> {
-                calendar.set(Calendar.DAY_OF_YEAR, 1)
-                calendar.timeInMillis
-            }
-            AnalyticsPeriod.ALL_TIME -> 0L
+        // C. Calculate Percentages for Pie Chart
+        val totalExpense = categories.sumOf { it.amount }
+        val pieData = categories.mapIndexed { index, cat ->
+            PieSlice(
+                label = cat.name,
+                value = cat.amount.toFloat(),
+                percentage = if(totalExpense > 0) (cat.amount / totalExpense).toFloat() else 0f,
+                color = getChartColor(index)
+            )
         }
 
-        return Pair(startDate, endDate)
+        AnalyticsData(income, expense, pieData)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AnalyticsData(0.0, 0.0, emptyList()))
+
+    fun setTimeRange(range: TimeRange) { _timeRange.value = range }
+
+    // --- HELPERS ---
+    private fun isInRange(date: Long, range: TimeRange): Boolean {
+        val cal = Calendar.getInstance()
+        val txCal = Calendar.getInstance().apply { timeInMillis = date }
+
+        return when(range) {
+            TimeRange.THIS_MONTH -> cal.get(Calendar.MONTH) == txCal.get(Calendar.MONTH) && cal.get(Calendar.YEAR) == txCal.get(Calendar.YEAR)
+            TimeRange.LAST_MONTH -> {
+                cal.add(Calendar.MONTH, -1)
+                cal.get(Calendar.MONTH) == txCal.get(Calendar.MONTH) && cal.get(Calendar.YEAR) == txCal.get(Calendar.YEAR)
+            }
+            TimeRange.ALL_TIME -> true
+        }
+    }
+
+    private fun getChartColor(index: Int): Color {
+        val colors = listOf(
+            Color(0xFFEF4444), // Red
+            Color(0xFFF59E0B), // Amber
+            Color(0xFF3B82F6), // Blue
+            Color(0xFF10B981), // Green
+            Color(0xFF8B5CF6)  // Violet
+        )
+        return colors.getOrElse(index) { Color.Gray }
     }
 }
 
-enum class AnalyticsPeriod {
-    TODAY, THIS_WEEK, THIS_MONTH, THIS_YEAR, ALL_TIME
-}
-
-data class PeriodSummary(
-    val income: Double = 0.0,
-    val expense: Double = 0.0,
-    val categoryBreakdown: List<Pair<String, Double>> = emptyList(),
-    val graphData: List<Pair<String, Double>> = emptyList(), // Label -> Amount
-    val topExpenses: List<Transaction> = emptyList(),
-    val transactionCount: Int = 0
-) {
-    val net: Double get() = income - expense
-    val savingsRate: Double get() = if (income > 0) ((income - expense) / income) * 100 else 0.0
-}
+enum class TimeRange { THIS_MONTH, LAST_MONTH, ALL_TIME }
+data class AnalyticsData(val income: Double, val expense: Double, val pieSlices: List<PieSlice>)
+data class CategoryData(val name: String, val amount: Double)
+data class PieSlice(val label: String, val value: Float, val percentage: Float, val color: Color)

@@ -1,58 +1,60 @@
 package com.scitech.accountex.ui.screens
 
-import android.app.Activity
-import android.content.Intent
-import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.BorderStroke // FIXED IMPORT
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Backup
+import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material.icons.rounded.CloudDownload
-import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.ui.window.Dialog
 import com.scitech.accountex.viewmodel.DataManagementViewModel
+import java.text.SimpleDateFormat
+import java.util.*
+
+// Theme Colors
+private val DarkBg = Color(0xFFF8FAFC)
+private val CardBg = Color(0xFFFFFFFF)
+private val GoldAccent = Color(0xFFFFAB40)
+private val BlueAccent = Color(0xFF448AFF)
+private val TextSlate = Color(0xFF1E293B)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DataManagementScreen(
-    viewModel: DataManagementViewModel = viewModel(),
+    viewModel: DataManagementViewModel,
     onNavigateBack: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
 
-    val exportLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.CreateDocument("application/json")) { uri: Uri? ->
-        if (uri != null) viewModel.exportData(uri)
-    }
+    // Launchers for ZIP files
+    val createBackupLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri -> uri?.let { viewModel.exportData(it) } }
 
-    val importLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        if (uri != null) viewModel.importData(uri)
-    }
+    val restoreBackupLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri -> uri?.let { viewModel.importData(it) } }
 
+    // Side Effect for Toasts based on State
     LaunchedEffect(uiState) {
         if (uiState.isSuccess) {
-            Toast.makeText(context, uiState.statusMessage, Toast.LENGTH_LONG).show()
+            Toast.makeText(context, uiState.statusMessage, Toast.LENGTH_SHORT).show()
             viewModel.resetState()
         } else if (uiState.isError) {
             Toast.makeText(context, uiState.statusMessage, Toast.LENGTH_LONG).show()
@@ -61,35 +63,80 @@ fun DataManagementScreen(
     }
 
     Scaffold(
+        containerColor = DarkBg,
         topBar = {
-            TopAppBar(
-                title = { Text("Backup & Restore", fontWeight = FontWeight.Bold) },
-                navigationIcon = { IconButton(onClick = onNavigateBack) { Icon(Icons.Default.ArrowBack, "Back") } },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+            CenterAlignedTopAppBar(
+                title = { Text("Data Safety", fontWeight = FontWeight.Bold, color = TextSlate) },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = TextSlate)
+                    }
+                },
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = DarkBg)
             )
-        },
-        containerColor = MaterialTheme.colorScheme.background
+        }
     ) { padding ->
-        Box(modifier = Modifier.padding(padding).fillMaxSize()) {
-            Column(modifier = Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(24.dp)) {
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)), shape = RoundedCornerShape(16.dp)) {
+        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(24.dp)
+            ) {
+                // INFO CARD
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFE0F2F1)),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
                     Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.primary)
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text("Regular backups ensure your financial data is never lost, even if you uninstall the app.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Icon(Icons.Default.Warning, null, tint = Color(0xFF00695C))
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Text(
+                            "This creates a ZIP archive with your data and all images.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFF004D40)
+                        )
                     }
                 }
-                Spacer(modifier = Modifier.height(16.dp))
-                BackupOptionCard("Export Backup", "Save your entire history to a JSON file.", Icons.Rounded.CloudUpload, MaterialTheme.colorScheme.primary) { exportLauncher.launch("accountex_backup_${System.currentTimeMillis()}.json") }
-                BackupOptionCard("Import Backup", "Restore data from a file. WARNING: Overwrites current data.", Icons.Rounded.CloudDownload, Color(0xFFFFA000)) { importLauncher.launch(arrayOf("application/json")) }
+
+                Text("Actions", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = TextSlate)
+
+                // BACKUP CARD
+                ActionCard(
+                    title = "Create Full Backup",
+                    subtitle = "Save data & images to a ZIP file.",
+                    icon = Icons.Default.Backup,
+                    color = GoldAccent,
+                    onClick = {
+                        val fileName = "Accountex_FullBackup_${SimpleDateFormat("yyyyMMdd_HHmm", Locale.getDefault()).format(Date())}.zip"
+                        createBackupLauncher.launch(fileName)
+                    }
+                )
+
+                // RESTORE CARD
+                ActionCard(
+                    title = "Restore Backup",
+                    subtitle = "Import a ZIP file. Overwrites current data.",
+                    icon = Icons.Default.Restore,
+                    color = BlueAccent,
+                    onClick = {
+                        // Accept standard zip MIME types
+                        restoreBackupLauncher.launch(arrayOf("application/zip", "application/x-zip-compressed"))
+                    }
+                )
             }
+
+            // LOADING OVERLAY
             if (uiState.isLoading) {
-                Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)).clickable(enabled = false) {}, contentAlignment = Alignment.Center) {
-                    Card(shape = RoundedCornerShape(16.dp)) {
-                        Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                            CircularProgressIndicator()
+                Dialog(onDismissRequest = {}) {
+                    Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                        Column(
+                            modifier = Modifier.padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            CircularProgressIndicator(color = BlueAccent)
                             Spacer(modifier = Modifier.height(16.dp))
-                            Text(uiState.statusMessage, fontWeight = FontWeight.Bold)
+                            Text(uiState.statusMessage, fontWeight = FontWeight.Medium)
                         }
                     }
                 }
@@ -99,21 +146,30 @@ fun DataManagementScreen(
 }
 
 @Composable
-fun BackupOptionCard(title: String, description: String, icon: ImageVector, color: Color, onClick: () -> Unit) {
+fun ActionCard(title: String, subtitle: String, icon: ImageVector, color: Color, onClick: () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
         shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)) // FIXED
+        colors = CardDefaults.cardColors(containerColor = CardBg),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
-        Row(modifier = Modifier.padding(24.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Box(modifier = Modifier.size(56.dp).background(color.copy(alpha = 0.1f), CircleShape), contentAlignment = Alignment.Center) { Icon(icon, null, tint = color, modifier = Modifier.size(28.dp)) }
-            Spacer(modifier = Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Row(
+            modifier = Modifier.padding(24.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(56.dp)
+                    .background(color.copy(alpha = 0.1f), RoundedCornerShape(16.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(icon, null, tint = color, modifier = Modifier.size(28.dp))
+            }
+            Spacer(modifier = Modifier.width(20.dp))
+            Column {
+                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = TextSlate)
                 Spacer(modifier = Modifier.height(4.dp))
-                Text(description, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
             }
         }
     }

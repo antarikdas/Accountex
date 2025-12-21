@@ -7,10 +7,10 @@ import com.scitech.accountex.data.Account
 import com.scitech.accountex.data.AccountType
 import com.scitech.accountex.data.AppDatabase
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted // <--- THIS WAS MISSING
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.stateIn       // <--- THIS WAS MISSING
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class ManageAccountsViewModel(application: Application) : AndroidViewModel(application) {
@@ -27,11 +27,7 @@ class ManageAccountsViewModel(application: Application) : AndroidViewModel(appli
 
     fun addAccount(name: String, type: AccountType, initialBalance: Double) {
         viewModelScope.launch {
-            val newAccount = Account(
-                name = name,
-                type = type,
-                balance = initialBalance
-            )
+            val newAccount = Account(name = name, type = type, balance = initialBalance)
             accountDao.insertAccount(newAccount)
         }
     }
@@ -44,17 +40,15 @@ class ManageAccountsViewModel(application: Application) : AndroidViewModel(appli
 
     fun deleteAccount(account: Account) {
         viewModelScope.launch {
-            // Safety Check: Don't delete if it has transactions
+            // Safety Check: Database Integrity
             val count = transactionDao.getTxCountForAccount(account.id)
             if (count > 0) {
-                _errorEvent.value = "Cannot delete: This account has $count transactions."
+                _errorEvent.value = "Cannot delete: This account has $count active transactions. Please delete them first."
             } else {
                 accountDao.deleteAccount(account)
             }
         }
     }
 
-    fun clearError() {
-        _errorEvent.value = null
-    }
+    fun clearError() { _errorEvent.value = null }
 }

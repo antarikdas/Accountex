@@ -50,7 +50,7 @@ fun DashboardScreen(
     onTransactionClick: (Int) -> Unit,
     onManageAccountsClick: () -> Unit,
     onNavigateToBackup: () -> Unit,
-    onViewAllClick: () -> Unit, // <--- NEW PARAMETER
+    onViewAllClick: () -> Unit, // <--- KEPT THE NEW NAVIGATION
     context: Context
 ) {
     // Collect State
@@ -58,8 +58,6 @@ fun DashboardScreen(
     val transactions by viewModel.transactions.collectAsState()
     val todaySummary by viewModel.todaySummary.collectAsState()
     val heldAmount by viewModel.heldAmount.collectAsState()
-
-    // Reactive Balance
     val totalBalance by viewModel.totalBalance.collectAsState()
 
     var showMenu by remember { mutableStateOf(false) }
@@ -92,37 +90,51 @@ fun DashboardScreen(
         Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
             Column(modifier = Modifier.fillMaxSize()) {
 
-                // === HERO SECTION ===
+                // === 1. RESTORED: THE ORIGINAL VIBRANT GRADIENT HERO ===
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp))
                         .background(
                             Brush.verticalGradient(
-                                colors = listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.primaryContainer)
+                                colors = listOf(
+                                    MaterialTheme.colorScheme.primary,
+                                    MaterialTheme.colorScheme.primaryContainer
+                                )
                             )
                         )
                         .padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 40.dp)
                 ) {
                     Column {
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        // Top Row
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text("Welcome Back,", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f))
                                 Text("Accountex", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
                             }
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                IconButton(onClick = onNavigateToBackup) { Icon(Icons.Rounded.CloudUpload, "Backup", tint = MaterialTheme.colorScheme.onPrimary) }
+                                IconButton(onClick = onNavigateToBackup) {
+                                    Icon(Icons.Rounded.CloudUpload, "Backup", tint = MaterialTheme.colorScheme.onPrimary)
+                                }
                                 Box {
-                                    IconButton(onClick = { showMenu = true }) { Icon(Icons.Default.MoreVert, "Menu", tint = MaterialTheme.colorScheme.onPrimary) }
+                                    IconButton(onClick = { showMenu = true }) {
+                                        Icon(Icons.Default.MoreVert, "Menu", tint = MaterialTheme.colorScheme.onPrimary)
+                                    }
                                     DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
                                         DropdownMenuItem(text = { Text("Export to Excel") }, onClick = { showMenu = false; requestExport() })
                                     }
                                 }
                             }
                         }
-                        Spacer(modifier = Modifier.height(24.dp))
-                        Text("Total Balance", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f))
 
+                        Spacer(modifier = Modifier.height(24.dp))
+
+                        // Balance
+                        Text("Total Balance", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f))
                         Text(
                             formatCurrency(totalBalance),
                             style = MaterialTheme.typography.displayMedium,
@@ -132,6 +144,8 @@ fun DashboardScreen(
                         )
 
                         Spacer(modifier = Modifier.height(16.dp))
+
+                        // Mini Stats (Glassmorphism style)
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -145,7 +159,7 @@ fun DashboardScreen(
                     }
                 }
 
-                // === CONTENT ===
+                // === 2. CONTENT ===
                 LazyColumn(
                     modifier = Modifier.fillMaxWidth().weight(1f),
                     contentPadding = PaddingValues(16.dp),
@@ -154,24 +168,39 @@ fun DashboardScreen(
                     if (heldAmount > 0) {
                         item { HeldMoneyCard(amount = heldAmount) }
                     }
+
+                    // Quick Actions
                     item {
                         SectionHeader("Quick Actions")
                         Spacer(modifier = Modifier.height(8.dp))
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
                             ModernActionBtn(Icons.Default.Star, "Templates", MaterialTheme.colorScheme.tertiary, onTemplatesClick)
                             ModernActionBtn(Icons.Default.Analytics, "Analytics", MaterialTheme.colorScheme.tertiary, onAnalyticsClick)
                             ModernActionBtn(Icons.Default.Inventory, "Inventory", MaterialTheme.colorScheme.tertiary, onNoteInventoryClick)
                         }
                     }
+
+                    // Accounts
                     item {
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             SectionHeader("Your Accounts")
-                            TextButton(onClick = onManageAccountsClick) { Text("Manage", fontWeight = FontWeight.SemiBold) }
+                            TextButton(onClick = onManageAccountsClick) {
+                                Text("Manage", fontWeight = FontWeight.SemiBold)
+                            }
                         }
                     }
-                    items(accounts) { account -> NeoAccountCard(account) }
+                    items(accounts) { account ->
+                        NeoAccountCard(account)
+                    }
 
-                    // UPDATED SECTION: Recent Transactions with "View All" Button
+                    // === 3. UPGRADED: Recent Transactions with View All ===
                     item {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -179,8 +208,9 @@ fun DashboardScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             SectionHeader("Recent Transactions")
-                            TextButton(onClick = onViewAllClick) { // Calls the new callback
-                                Text("View All", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                            // The "View All" button links to your new Data Hub
+                            TextButton(onClick = onViewAllClick) {
+                                Text("View All", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -194,7 +224,8 @@ fun DashboardScreen(
     }
 }
 
-// Transaction Item
+// --- RESTORED ORIGINAL COMPONENTS ---
+
 @Composable
 private fun ModernTransactionItem(transaction: Transaction, onClick: () -> Unit) {
     Row(
@@ -204,6 +235,7 @@ private fun ModernTransactionItem(transaction: Transaction, onClick: () -> Unit)
             .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        // Original "Arrow Icon" style you liked
         Box(
             modifier = Modifier
                 .size(48.dp)
@@ -223,13 +255,12 @@ private fun ModernTransactionItem(transaction: Transaction, onClick: () -> Unit)
         Column(modifier = Modifier.weight(1f)) {
             Text(transaction.category, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
 
-            // Row to show Date + optional Paperclip icon
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (transaction.imageUris.isNotEmpty()) {
                     Icon(
                         Icons.Default.AttachFile,
                         contentDescription = null,
-                        modifier = Modifier.size(14.dp),
+                        modifier = Modifier.size(12.dp),
                         tint = MaterialTheme.colorScheme.primary
                     )
                     Spacer(modifier = Modifier.width(4.dp))
@@ -273,15 +304,23 @@ fun HeldMoneyCard(amount: Double) {
     }
 }
 
-// ... (Rest of your helpers: NeoAccountCard, AccountStyle, MiniStat, ModernActionBtn remain exactly as you had them) ...
+// ... (Rest of your original helpers: NeoAccountCard, AccountStyle, MiniStat, ModernActionBtn) ...
+// Included here for completeness so you can copy-paste the whole file safely.
 
 @Composable
 fun NeoAccountCard(account: Account) {
     val style = getAccountStyle(account)
-    Card(modifier = Modifier.fillMaxWidth().heightIn(min = 100.dp).padding(vertical = 4.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(defaultElevation = 4.dp), shape = RoundedCornerShape(20.dp)) {
+    Card(
+        modifier = Modifier.fillMaxWidth().heightIn(min = 100.dp).padding(vertical = 4.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        shape = RoundedCornerShape(20.dp)
+    ) {
         Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.SpaceBetween) {
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Box(modifier = Modifier.size(48.dp).clip(CircleShape).background(style.containerColor), contentAlignment = Alignment.Center) { Icon(style.icon, contentDescription = account.name, tint = style.color, modifier = Modifier.size(28.dp)) }
+                Box(modifier = Modifier.size(48.dp).clip(CircleShape).background(style.containerColor), contentAlignment = Alignment.Center) {
+                    Icon(style.icon, contentDescription = account.name, tint = style.color, modifier = Modifier.size(28.dp))
+                }
                 Spacer(modifier = Modifier.width(16.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(account.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
@@ -294,7 +333,9 @@ fun NeoAccountCard(account: Account) {
         }
     }
 }
+
 data class AccountStyle(val icon: ImageVector, val color: Color, val containerColor: Color)
+
 @Composable
 fun getAccountStyle(account: Account): AccountStyle {
     val isDark = isSystemInDarkTheme()
@@ -313,22 +354,32 @@ fun getAccountStyle(account: Account): AccountStyle {
     val containerColor = if (isDark) baseColor.copy(alpha = 0.2f) else baseColor.copy(alpha = 0.1f)
     return AccountStyle(icon, baseColor, containerColor)
 }
+
 @Composable
 private fun MiniStat(label: String, amount: Double, isPositive: Boolean) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(modifier = Modifier.size(24.dp).background(if(isPositive) Color(0xFFE8F5E9) else Color(0xFFFFEBEE), CircleShape), contentAlignment = Alignment.Center) { Icon(if(isPositive) Icons.Default.ArrowDownward else Icons.Default.ArrowUpward, null, modifier = Modifier.size(14.dp), tint = if(isPositive) Color(0xFF2E7D32) else Color(0xFFC62828)) }
+        Box(modifier = Modifier.size(24.dp).background(if(isPositive) Color(0xFFE8F5E9) else Color(0xFFFFEBEE), CircleShape), contentAlignment = Alignment.Center) {
+            Icon(if(isPositive) Icons.Default.ArrowDownward else Icons.Default.ArrowUpward, null, modifier = Modifier.size(14.dp), tint = if(isPositive) Color(0xFF2E7D32) else Color(0xFFC62828))
+        }
         Spacer(modifier = Modifier.width(8.dp))
-        Column { Text(label, style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.8f)); Text(formatCurrency(amount), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = Color.White) }
+        Column {
+            Text(label, style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.8f))
+            Text(formatCurrency(amount), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = Color.White)
+        }
     }
 }
+
 @Composable
 private fun ModernActionBtn(icon: ImageVector, label: String, color: Color, onClick: () -> Unit) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable(onClick = onClick)) {
-        Box(modifier = Modifier.size(60.dp).background(color.copy(alpha = 0.1f), RoundedCornerShape(18.dp)), contentAlignment = Alignment.Center) { Icon(icon, null, tint = color, modifier = Modifier.size(28.dp)) }
+        Box(modifier = Modifier.size(60.dp).background(color.copy(alpha = 0.1f), RoundedCornerShape(18.dp)), contentAlignment = Alignment.Center) {
+            Icon(icon, null, tint = color, modifier = Modifier.size(28.dp))
+        }
         Spacer(modifier = Modifier.height(6.dp))
         Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
     }
 }
+
 @Composable
 private fun SectionHeader(title: String) {
     Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.padding(bottom = 8.dp))
