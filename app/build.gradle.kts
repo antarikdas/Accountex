@@ -97,6 +97,11 @@ dependencies {
     implementation("org.dhatim:fastexcel:0.15.7")
     implementation("org.dhatim:fastexcel-reader:0.15.7")
 
+    //For Biometric Authentication
+    implementation("androidx.biometric:biometric:1.1.0")
+    implementation("androidx.navigation:navigation-compose:2.8.5")
+
+
     // Testing
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")

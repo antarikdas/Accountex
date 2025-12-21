@@ -50,6 +50,7 @@ fun DashboardScreen(
     onTransactionClick: (Int) -> Unit,
     onManageAccountsClick: () -> Unit,
     onNavigateToBackup: () -> Unit,
+    onViewAllClick: () -> Unit, // <--- NEW PARAMETER
     context: Context
 ) {
     // Collect State
@@ -58,7 +59,7 @@ fun DashboardScreen(
     val todaySummary by viewModel.todaySummary.collectAsState()
     val heldAmount by viewModel.heldAmount.collectAsState()
 
-    // FIX 1: Use Reactive Balance (Fixes the lag)
+    // Reactive Balance
     val totalBalance by viewModel.totalBalance.collectAsState()
 
     var showMenu by remember { mutableStateOf(false) }
@@ -122,7 +123,6 @@ fun DashboardScreen(
                         Spacer(modifier = Modifier.height(24.dp))
                         Text("Total Balance", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f))
 
-                        // FIX: Displaying reactive totalBalance variable
                         Text(
                             formatCurrency(totalBalance),
                             style = MaterialTheme.typography.displayMedium,
@@ -171,7 +171,20 @@ fun DashboardScreen(
                     }
                     items(accounts) { account -> NeoAccountCard(account) }
 
-                    item { SectionHeader("Recent Transactions") }
+                    // UPDATED SECTION: Recent Transactions with "View All" Button
+                    item {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            SectionHeader("Recent Transactions")
+                            TextButton(onClick = onViewAllClick) { // Calls the new callback
+                                Text("View All", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
+
                     items(transactions.take(10)) { transaction ->
                         ModernTransactionItem(transaction, onClick = { onTransactionClick(transaction.id) })
                     }
@@ -181,7 +194,7 @@ fun DashboardScreen(
     }
 }
 
-// FIX 2: ModernTransactionItem (Kept Arrow UI, added Paperclip Indicator)
+// Transaction Item
 @Composable
 private fun ModernTransactionItem(transaction: Transaction, onClick: () -> Unit) {
     Row(
@@ -210,7 +223,7 @@ private fun ModernTransactionItem(transaction: Transaction, onClick: () -> Unit)
         Column(modifier = Modifier.weight(1f)) {
             Text(transaction.category, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
 
-            // New: Row to show Date + optional Paperclip icon
+            // Row to show Date + optional Paperclip icon
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (transaction.imageUris.isNotEmpty()) {
                     Icon(
@@ -260,7 +273,7 @@ fun HeldMoneyCard(amount: Double) {
     }
 }
 
-// ... (Rest of your helpers like NeoAccountCard, AccountStyle, MiniStat, ModernActionBtn remain exactly as you had them) ...
+// ... (Rest of your helpers: NeoAccountCard, AccountStyle, MiniStat, ModernActionBtn remain exactly as you had them) ...
 
 @Composable
 fun NeoAccountCard(account: Account) {

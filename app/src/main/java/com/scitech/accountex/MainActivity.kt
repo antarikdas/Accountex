@@ -1,19 +1,26 @@
 package com.scitech.accountex
 
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.scitech.accountex.ui.screens.*
 import com.scitech.accountex.ui.theme.AccountexTheme
+import com.scitech.accountex.utils.BiometricAuth
 import com.scitech.accountex.viewmodel.*
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
@@ -22,14 +29,54 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    AccountexApp()
+                    var isUnlocked by remember { mutableStateOf(false) }
+
+                    // Trigger Auth on Launch
+                    LaunchedEffect(Unit) {
+                        BiometricAuth.authenticate(
+                            activity = this@MainActivity,
+                            onSuccess = { isUnlocked = true },
+                            onError = { /* Keep locked */ }
+                        )
+                    }
+
+                    if (isUnlocked) {
+                        AccountexApp()
+                    } else {
+                        LockedScreen(onUnlockClick = {
+                            BiometricAuth.authenticate(
+                                activity = this@MainActivity,
+                                onSuccess = { isUnlocked = true },
+                                onError = { }
+                            )
+                        })
+                    }
                 }
             }
         }
     }
 }
 
-// 1. Define all possible screens here
+@Composable
+fun LockedScreen(onUnlockClick: () -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxSize().background(Color(0xFF1E293B)),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(Icons.Rounded.Lock, "Locked", tint = Color.White, modifier = Modifier.size(80.dp))
+        Spacer(modifier = Modifier.height(24.dp))
+        Text("Accountex is Locked", style = MaterialTheme.typography.headlineSmall, color = Color.White, fontWeight = FontWeight.Bold)
+        Spacer(modifier = Modifier.height(8.dp))
+        Text("Your financial data is secure.", style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
+        Spacer(modifier = Modifier.height(32.dp))
+        Button(onClick = onUnlockClick, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3B82F6))) {
+            Text("Unlock App")
+        }
+    }
+}
+
+// 1. Defined Screen Enum
 enum class Screen {
     Dashboard,
     AddTransaction,
@@ -38,7 +85,8 @@ enum class Screen {
     Templates,
     TransactionDetail,
     ManageAccounts,
-    Backup // <--- 1. ADDED BACKUP SCREEN
+    Backup,
+    DataHub // <--- Added DataHub
 }
 
 @Composable
@@ -54,7 +102,8 @@ fun AccountexApp() {
     val noteInventoryViewModel: NoteInventoryViewModel = viewModel()
     val templateViewModel: TemplateViewModel = viewModel()
     val manageAccountsViewModel: ManageAccountsViewModel = viewModel()
-    val dataManagementViewModel: DataManagementViewModel = viewModel() // <--- 2. ADDED BACKUP VIEWMODEL
+    val dataManagementViewModel: DataManagementViewModel = viewModel()
+    val dataHubViewModel: DataHubViewModel = viewModel() // <--- Initialize DataHub ViewModel
 
     // 4. Navigation Logic
     when (currentScreen) {
@@ -70,7 +119,8 @@ fun AccountexApp() {
                     currentScreen = Screen.TransactionDetail
                 },
                 onManageAccountsClick = { currentScreen = Screen.ManageAccounts },
-                onNavigateToBackup = { currentScreen = Screen.Backup }, // <--- 3. CONNECTED THE BRIDGE
+                onNavigateToBackup = { currentScreen = Screen.Backup },
+                onViewAllClick = { currentScreen = Screen.DataHub }, // <--- FIX: Passing the navigation action
                 context = androidx.compose.ui.platform.LocalContext.current
             )
         }
@@ -80,6 +130,17 @@ fun AccountexApp() {
                 viewModel = addTransactionViewModel,
                 templateViewModel = templateViewModel,
                 onNavigateBack = { currentScreen = Screen.Dashboard }
+            )
+        }
+
+        Screen.DataHub -> { // <--- Added DataHub Screen Logic
+            DataHubScreen(
+                viewModel = dataHubViewModel,
+                onNavigateBack = { currentScreen = Screen.Dashboard },
+                onTransactionClick = { id ->
+                    selectedTransactionId = id
+                    currentScreen = Screen.TransactionDetail
+                }
             )
         }
 
@@ -122,7 +183,7 @@ fun AccountexApp() {
             )
         }
 
-        Screen.Backup -> { // <--- 4. ADDED BACKUP SCREEN UI
+        Screen.Backup -> {
             DataManagementScreen(
                 viewModel = dataManagementViewModel,
                 onNavigateBack = { currentScreen = Screen.Dashboard }
