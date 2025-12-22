@@ -84,6 +84,9 @@ dependencies {
     // Charts
     implementation("com.github.PhilJay:MPAndroidChart:v3.1.0")
 
+    //Navigation
+    implementation("androidx.navigation:navigation-compose:2.8.0")
+
     // Camera
     implementation("androidx.camera:camera-core:1.3.1")
     implementation("androidx.camera:camera-camera2:1.3.1")

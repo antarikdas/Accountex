@@ -11,6 +11,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
@@ -25,10 +26,7 @@ class MainActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             AccountexTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
+                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     var isUnlocked by remember { mutableStateOf(false) }
 
                     // Trigger Auth on Launch
@@ -86,7 +84,7 @@ enum class Screen {
     TransactionDetail,
     ManageAccounts,
     Backup,
-    DataHub // <--- Added DataHub
+    Ledger // Use Ledger for "View All"
 }
 
 @Composable
@@ -103,7 +101,7 @@ fun AccountexApp() {
     val templateViewModel: TemplateViewModel = viewModel()
     val manageAccountsViewModel: ManageAccountsViewModel = viewModel()
     val dataManagementViewModel: DataManagementViewModel = viewModel()
-    val dataHubViewModel: DataHubViewModel = viewModel() // <--- Initialize DataHub ViewModel
+    val ledgerViewModel: LedgerViewModel = viewModel()
 
     // 4. Navigation Logic
     when (currentScreen) {
@@ -120,8 +118,8 @@ fun AccountexApp() {
                 },
                 onManageAccountsClick = { currentScreen = Screen.ManageAccounts },
                 onNavigateToBackup = { currentScreen = Screen.Backup },
-                onViewAllClick = { currentScreen = Screen.DataHub }, // <--- FIX: Passing the navigation action
-                context = androidx.compose.ui.platform.LocalContext.current
+                onNavigateToLedger = { currentScreen = Screen.Ledger }, // <--- FIX: Correct parameter name
+                context = LocalContext.current
             )
         }
 
@@ -133,9 +131,9 @@ fun AccountexApp() {
             )
         }
 
-        Screen.DataHub -> { // <--- Added DataHub Screen Logic
-            DataHubScreen(
-                viewModel = dataHubViewModel,
+        Screen.Ledger -> {
+            LedgerScreen(
+                viewModel = ledgerViewModel,
                 onNavigateBack = { currentScreen = Screen.Dashboard },
                 onTransactionClick = { id ->
                     selectedTransactionId = id
