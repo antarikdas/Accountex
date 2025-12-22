@@ -2,13 +2,14 @@ package com.scitech.accountex.viewmodel
 
 import android.app.Application
 import android.content.Intent
-import android.os.Environment
 import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.scitech.accountex.data.*
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.dhatim.fastexcel.Workbook
 import java.io.File
 import java.io.FileOutputStream
@@ -28,11 +29,9 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     val transactions: StateFlow<List<Transaction>> = transactionDao.getAllTransactions()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // NEW: Held Amount for the Dashboard Card
     val heldAmount: StateFlow<Double> = currencyNoteDao.getGlobalHeldAmount()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
 
-    // FIX: Reactive Total Balance (Updates instantly)
     val totalBalance: StateFlow<Double> = accounts.map { list ->
         list.sumOf { it.balance }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
@@ -61,17 +60,14 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    // Kept for backward compatibility if needed, but UI should use totalBalance
-    fun getTotalBalance(): Double {
-        return accounts.value.sumOf { it.balance }
-    }
-
+    // --- EXPORT LOGIC FIXED ---
     fun exportToExcel() {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) { // Move to Background Thread
             try {
-                val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                val context = getApplication<Application>()
+                // 1. Use Cache Directory (No Permissions needed)
                 val fileName = "Accountex_Export_${System.currentTimeMillis()}.xlsx"
-                val file = File(downloadsDir, fileName)
+                val file = File(context.cacheDir, fileName)
 
                 FileOutputStream(file).use { outputStream ->
                     val workbook = Workbook(outputStream, "Accountex", "1.0")
@@ -85,7 +81,11 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                     worksheet.range(0, 0, 0, headers.size - 1).style().bold().set()
 
                     val sdf = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
-                    transactions.value.forEachIndexed { index, transaction ->
+
+                    // Snapshot the current list to avoid concurrent modification
+                    val currentList = transactions.value
+
+                    currentList.forEachIndexed { index, transaction ->
                         val row = index + 1
                         val account = accounts.value.find { it.id == transaction.accountId }
 
@@ -98,7 +98,11 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                     }
                     workbook.finish()
                 }
-                shareFile(file)
+
+                // Switch back to Main Thread to launch UI
+                withContext(Dispatchers.Main) {
+                    shareFile(file)
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -107,14 +111,20 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
     private fun shareFile(file: File) {
         val context = getApplication<Application>()
-        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+
+        // 2. Use FileProvider for secure sharing
+        // NOTE: This requires a <provider> entry in AndroidManifest.xml
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
+
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             putExtra(Intent.EXTRA_STREAM, uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-        context.startActivity(Intent.createChooser(intent, "Share Excel File").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+
+        val chooser = Intent.createChooser(intent, "Share Excel File")
+        chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(chooser)
     }
 }
 

@@ -12,9 +12,9 @@ interface TransactionDao {
     @Query("SELECT * FROM transactions ORDER BY date DESC")
     fun getAllTransactions(): Flow<List<Transaction>>
 
-    // NEW: Synchronous fetch for Backup
+    // FIX: Added 'suspend' to prevent Main Thread freezes
     @Query("SELECT * FROM transactions")
-    fun getAllTransactionsSync(): List<Transaction>
+    suspend fun getAllTransactionsSync(): List<Transaction>
 
     @Query("SELECT * FROM transactions WHERE id = :id")
     suspend fun getTransactionById(id: Int): Transaction?
@@ -34,9 +34,9 @@ interface TransactionDao {
     @Query("SELECT DISTINCT description FROM transactions WHERE description != '' ORDER BY date DESC LIMIT 20")
     fun getRecentsDescriptions(): Flow<List<String>>
 
+    // FIX: Changed return type to Double? to handle null (if no transactions exist)
     @Query("SELECT SUM(amount) FROM transactions WHERE type = :type AND date BETWEEN :startDate AND :endDate")
     suspend fun getTotalByTypeAndDateRange(type: TransactionType, startDate: Long, endDate: Long): Double?
-
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTransaction(transaction: Transaction): Long
