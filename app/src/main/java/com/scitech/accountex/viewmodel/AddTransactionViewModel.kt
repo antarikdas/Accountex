@@ -63,6 +63,9 @@ class AddTransactionViewModel(application: Application) : AndroidViewModel(appli
 
     fun loadNotesForAccount(accountId: Int, type: TransactionType) {
         inventoryJob?.cancel()
+        // LOAD LOGIC:
+        // For Transfer, we MUST load notes from the Source Account
+        // so the user can pick exactly which physical cash to move.
         inventoryJob = viewModelScope.launch {
             val flow = if (type == TransactionType.THIRD_PARTY_OUT) {
                 noteDao.getActiveThirdPartyNotes(accountId)
@@ -93,6 +96,10 @@ class AddTransactionViewModel(application: Application) : AndroidViewModel(appli
         loadNotesForAccount(accountId, _uiState.value.selectedType)
     }
 
+    fun updateToAccount(accountId: Int) {
+        _uiState.update { it.copy(toAccountId = accountId) }
+    }
+
     fun applyTemplate(template: TransactionTemplate) {
         _uiState.update {
             it.copy(
@@ -120,7 +127,6 @@ class AddTransactionViewModel(application: Application) : AndroidViewModel(appli
         _incomingNotes.value = current
     }
 
-    // NEW: Bulk Add Function for Coins
     fun addBulkIncomingNotes(denomination: Int, count: Int, isCoin: Boolean) {
         val newNotes = List(count) {
             val serial = if (isCoin) "COIN-${System.currentTimeMillis()}-${UUID.randomUUID().toString().take(6)}" else ""
@@ -155,22 +161,26 @@ class AddTransactionViewModel(application: Application) : AndroidViewModel(appli
             val tx = Transaction(
                 type = state.selectedType,
                 amount = amount,
-                category = if(state.selectedType == TransactionType.EXCHANGE) "Currency Exchange" else state.category,
+                category = if(state.selectedType == TransactionType.EXCHANGE) "Currency Exchange"
+                else if (state.selectedType == TransactionType.TRANSFER) "Transfer"
+                else state.category,
                 description = state.description,
                 date = state.selectedDate,
                 accountId = state.selectedAccountId,
+                toAccountId = if(state.selectedType == TransactionType.TRANSFER) state.toAccountId else null,
                 imageUris = permanentImagePaths,
                 thirdPartyName = state.thirdPartyName
             )
             val txId = transactionDao.insertTransaction(tx).toInt()
 
-            suspend fun insertIncomingNotes(isThirdParty: Boolean) {
+            // 1. Helper: Insert NEW notes (Manual Entry)
+            suspend fun insertIncomingNotes(isThirdParty: Boolean, targetAccountId: Int) {
                 _incomingNotes.value.forEach { draft ->
                     noteDao.insertNote(CurrencyNote(
                         serialNumber = draft.serial,
                         amount = draft.denomination.toDouble(),
                         denomination = draft.denomination,
-                        accountId = state.selectedAccountId,
+                        accountId = targetAccountId,
                         receivedTransactionId = txId,
                         receivedDate = state.selectedDate,
                         isThirdParty = isThirdParty,
@@ -179,6 +189,7 @@ class AddTransactionViewModel(application: Application) : AndroidViewModel(appli
                 }
             }
 
+            // 2. Helper: Mark notes as SPENT (Removes from Source)
             suspend fun spendSelectedNotes() {
                 _selectedNoteIds.value.forEach { noteId ->
                     noteDao.markAsSpent(noteId, txId, state.selectedDate)
@@ -187,23 +198,50 @@ class AddTransactionViewModel(application: Application) : AndroidViewModel(appli
 
             when (state.selectedType) {
                 TransactionType.INCOME -> {
-                    insertIncomingNotes(isThirdParty = false)
+                    insertIncomingNotes(isThirdParty = false, targetAccountId = state.selectedAccountId)
                     accountDao.updateBalance(state.selectedAccountId, amount)
                 }
                 TransactionType.EXPENSE -> {
                     spendSelectedNotes()
-                    insertIncomingNotes(isThirdParty = false)
+                    insertIncomingNotes(isThirdParty = false, targetAccountId = state.selectedAccountId)
                     accountDao.updateBalance(state.selectedAccountId, -amount)
                 }
+                TransactionType.TRANSFER -> {
+                    // A. Update Balances
+                    accountDao.updateBalance(state.selectedAccountId, -amount)
+                    if(state.toAccountId != null) {
+                        accountDao.updateBalance(state.toAccountId, amount)
+
+                        // B. THE MAGIC: Move EXACT Selected Notes/Coins
+                        val notesToMove = _availableNotes.value.filter { it.id in _selectedNoteIds.value }
+                        notesToMove.forEach { oldNote ->
+                            noteDao.insertNote(CurrencyNote(
+                                serialNumber = oldNote.serialNumber, // KEEP SERIAL (Works for Coins too)
+                                amount = oldNote.amount,
+                                denomination = oldNote.denomination,
+                                accountId = state.toAccountId, // NEW OWNER (Destination)
+                                receivedTransactionId = txId,
+                                receivedDate = state.selectedDate,
+                                isThirdParty = false,
+                                thirdPartyName = null
+                            ))
+                        }
+
+                        // C. Handle Incoming Manual Notes (e.g. Withdrawal Bank -> Cash)
+                        insertIncomingNotes(isThirdParty = false, targetAccountId = state.toAccountId)
+                    }
+                    // D. Remove the notes from Source
+                    spendSelectedNotes()
+                }
                 TransactionType.THIRD_PARTY_IN -> {
-                    insertIncomingNotes(isThirdParty = true)
+                    insertIncomingNotes(isThirdParty = true, targetAccountId = state.selectedAccountId)
                 }
                 TransactionType.THIRD_PARTY_OUT -> {
                     spendSelectedNotes()
                 }
                 TransactionType.EXCHANGE -> {
                     spendSelectedNotes()
-                    insertIncomingNotes(isThirdParty = false)
+                    insertIncomingNotes(isThirdParty = false, targetAccountId = state.selectedAccountId)
                 }
             }
 
@@ -243,5 +281,6 @@ data class TransactionFormState(
     val description: String = "",
     val thirdPartyName: String = "",
     val selectedAccountId: Int = 0,
+    val toAccountId: Int? = null,
     val selectedDate: Long = System.currentTimeMillis()
 )

@@ -3,6 +3,7 @@ package com.scitech.accountex.viewmodel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.scitech.accountex.data.Account
 import com.scitech.accountex.data.AppDatabase
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -13,33 +14,39 @@ import kotlinx.coroutines.flow.stateIn
 class NoteInventoryViewModel(application: Application) : AndroidViewModel(application) {
     private val db = AppDatabase.getDatabase(application)
     private val noteDao = db.currencyNoteDao()
+    private val accountDao = db.accountDao() // Added Account DAO
 
-    // 1. Filter State (0 = All, or specific Account ID)
-    private val _selectedAccountId = MutableStateFlow(0)
+    // 1. Inputs
+    private val _selectedAccountId = MutableStateFlow(0) // 0 = All Accounts
     val selectedAccountId = _selectedAccountId.asStateFlow()
 
-    // 2. Raw Data
-    private val _allNotes = noteDao.getAllNotes() // You might need to ensure this Flow exists in DAO
+    // 2. Data Sources
+    val availableAccounts = accountDao.getAllAccounts() // Fetch accounts for the filter list
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // 3. Processed Inventory (Grouped by Denomination)
+    private val _allNotes = noteDao.getAllNotes()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // 3. The "Smart Inventory" Logic
     val inventoryState = combine(_allNotes, _selectedAccountId) { notes, accId ->
-        // Filter: Active notes (not spent) AND match account (if selected)
-        val activeNotes = notes.filter {
-            it.spentTransactionId == null && (accId == 0 || it.accountId == accId)
+        // Step A: Filter logic
+        val filteredNotes = if (accId == 0) {
+            notes.filter { it.spentTransactionId == null } // Show ALL unspent notes
+        } else {
+            notes.filter { it.spentTransactionId == null && it.accountId == accId } // Show ONLY specific account
         }
 
-        // Group by Denomination (e.g., all 500s together)
-        val grouped = activeNotes.groupBy { it.denomination }
+        // Step B: Grouping logic (The "Stacking" effect)
+        val grouped = filteredNotes.groupBy { it.denomination }
             .map { (denom, noteList) ->
                 InventoryItem(
                     denomination = denom,
                     count = noteList.size,
                     totalValue = noteList.sumOf { it.amount },
-                    isCoin = denom <= 20 // Auto-detect coin
+                    isCoin = denom <= 20
                 )
             }
-            .sortedByDescending { it.denomination } // Show big notes first
+            .sortedByDescending { it.denomination }
 
         val totalValue = grouped.sumOf { it.totalValue }
         val totalCount = grouped.sumOf { it.count }
