@@ -6,48 +6,56 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
-// A clean, modern typography scale
+// Ideally, we would import "Outfit" or "Manrope" here from res/font.
+// For now, we tune the System Font to look premium.
+
 val Typography = Typography(
+    // 1. HUGE BALANCES (Dashboard Header)
     displayLarge = TextStyle(
-        fontFamily = FontFamily.Default,
+        fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Bold,
-        fontSize = 57.sp,
-        lineHeight = 64.sp,
-        letterSpacing = (-0.25).sp
+        fontSize = 48.sp,
+        letterSpacing = (-1.5).sp // Tight tracking for modern look
     ),
-    displayMedium = TextStyle(
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Bold,
-        fontSize = 45.sp,
-        lineHeight = 52.sp,
-        letterSpacing = 0.sp
-    ),
-    headlineMedium = TextStyle( // Used for big headers
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Bold,
-        fontSize = 28.sp,
-        lineHeight = 36.sp,
-        letterSpacing = 0.sp
-    ),
-    titleMedium = TextStyle( // Used for list items
-        fontFamily = FontFamily.Default,
+
+    // 2. SECTION HEADERS ("Recent Transactions")
+    headlineMedium = TextStyle(
+        fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 16.sp,
-        lineHeight = 24.sp,
-        letterSpacing = 0.15.sp
-    ),
-    bodyLarge = TextStyle( // Standard text
-        fontFamily = FontFamily.Default,
-        fontWeight = FontWeight.Normal,
-        fontSize = 16.sp,
-        lineHeight = 24.sp,
+        fontSize = 20.sp,
         letterSpacing = 0.5.sp
     ),
-    labelLarge = TextStyle( // Buttons
-        fontFamily = FontFamily.Default,
+
+    // 3. CARD TITLES ("Net Savings")
+    titleMedium = TextStyle(
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.Medium,
+        fontSize = 16.sp,
+        letterSpacing = 0.15.sp
+    ),
+
+    // 4. BODY TEXT (Descriptions)
+    bodyMedium = TextStyle(
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.Normal,
+        fontSize = 14.sp,
+        lineHeight = 20.sp
+    ),
+
+    // 5. BUTTONS ("Save Transaction")
+    labelLarge = TextStyle(
+        fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Bold,
         fontSize = 14.sp,
-        lineHeight = 20.sp,
-        letterSpacing = 0.1.sp
+        letterSpacing = 1.sp // Uppercase look
+    ),
+
+    // 6. FINANCIAL DATA (The Monospace Fix)
+    // Use this style for ALL currency displays
+    bodyLarge = TextStyle(
+        fontFamily = FontFamily.Monospace, // Ensures numbers align vertically
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 16.sp,
+        letterSpacing = 0.sp
     )
 )

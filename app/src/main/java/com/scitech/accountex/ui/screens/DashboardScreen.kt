@@ -50,7 +50,7 @@ fun DashboardScreen(
     onTransactionClick: (Int) -> Unit,
     onManageAccountsClick: () -> Unit,
     onNavigateToBackup: () -> Unit,
-    onNavigateToLedger: () -> Unit, // <--- Renamed for clarity (View All)
+    onNavigateToLedger: () -> Unit,
     context: Context
 ) {
     val accounts by viewModel.accounts.collectAsState()
@@ -78,8 +78,8 @@ fun DashboardScreen(
         floatingActionButton = {
             FloatingActionButton(
                 onClick = onAddTransactionClick,
-                containerColor = MaterialTheme.colorScheme.secondary,
-                contentColor = MaterialTheme.colorScheme.onSecondary,
+                containerColor = MaterialTheme.colorScheme.tertiary, // Gold button for "New Value"
+                contentColor = MaterialTheme.colorScheme.onTertiary,
                 elevation = FloatingActionButtonDefaults.elevation(8.dp)
             ) {
                 Icon(Icons.Default.Add, "Add", modifier = Modifier.size(32.dp))
@@ -89,19 +89,27 @@ fun DashboardScreen(
         Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
             Column(modifier = Modifier.fillMaxSize()) {
 
-                // HEADER
+                // --- 1. PREMIUM HEADER (Gradient Mesh) ---
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp))
-                        .background(Brush.verticalGradient(colors = listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.primaryContainer)))
-                        .padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 40.dp)
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    MaterialTheme.colorScheme.primary, // Emerald
+                                    MaterialTheme.colorScheme.primaryContainer // Lighter Emerald
+                                )
+                            )
+                        )
+                        .padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 48.dp)
                 ) {
                     Column {
+                        // Top Bar
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text("Welcome Back,", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f))
-                                Text("Accountex", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
+                                Text("Accountex", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onPrimary)
                             }
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 IconButton(onClick = onNavigateToBackup) { Icon(Icons.Rounded.CloudUpload, "Backup", tint = MaterialTheme.colorScheme.onPrimary) }
@@ -113,43 +121,68 @@ fun DashboardScreen(
                                 }
                             }
                         }
+
+                        Spacer(modifier = Modifier.height(32.dp))
+
+                        // Total Balance (Monospace for alignment)
+                        Text("TOTAL BALANCE", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f), letterSpacing = 2.sp)
+                        Text(
+                            formatCurrency(totalBalance),
+                            style = MaterialTheme.typography.displayLarge, // Use the big new font
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
+
                         Spacer(modifier = Modifier.height(24.dp))
-                        Text("Total Balance", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.9f))
-                        Text(formatCurrency(totalBalance), style = MaterialTheme.typography.displayMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary, letterSpacing = (-1).sp)
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Row(modifier = Modifier.fillMaxWidth().background(Color.White.copy(alpha = 0.15f), RoundedCornerShape(12.dp)).padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                            MiniStat("Income", todaySummary.income, true)
-                            MiniStat("Expense", todaySummary.expense, false)
+
+                        // Mini Stats (Glassmorphism)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color.White.copy(alpha = 0.15f), RoundedCornerShape(16.dp))
+                                .padding(16.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            MiniStat("Income", todaySummary.income, isIncome = true)
+                            // Vertical Divider
+                            Box(modifier = Modifier.width(1.dp).height(40.dp).background(Color.White.copy(alpha = 0.2f)))
+                            MiniStat("Expense", todaySummary.expense, isIncome = false)
                         }
                     }
                 }
 
-                // CONTENT
-                LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+                // --- 2. SCROLLABLE CONTENT ---
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    contentPadding = PaddingValues(24.dp),
+                    verticalArrangement = Arrangement.spacedBy(24.dp)
+                ) {
+                    // Alert Card
                     if (heldAmount > 0) { item { HeldMoneyCard(amount = heldAmount) } }
 
+                    // Quick Actions
                     item {
                         SectionHeader("Quick Actions")
-                        Spacer(modifier = Modifier.height(8.dp))
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            ModernActionBtn(Icons.Default.Star, "Templates", MaterialTheme.colorScheme.tertiary, onTemplatesClick)
+                            ModernActionBtn(Icons.Default.Star, "Templates", MaterialTheme.colorScheme.primary, onTemplatesClick)
                             ModernActionBtn(Icons.Default.Analytics, "Analytics", MaterialTheme.colorScheme.tertiary, onAnalyticsClick)
-                            ModernActionBtn(Icons.Default.Inventory, "Inventory", MaterialTheme.colorScheme.tertiary, onNoteInventoryClick)
+                            ModernActionBtn(Icons.Default.Inventory, "Inventory", MaterialTheme.colorScheme.secondary, onNoteInventoryClick)
                         }
                     }
 
+                    // Accounts Section
                     item {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            SectionHeader("Your Accounts")
-                            TextButton(onClick = onManageAccountsClick) { Text("Manage", fontWeight = FontWeight.SemiBold) }
+                            SectionHeader("Wallets")
+                            TextButton(onClick = onManageAccountsClick) { Text("Manage", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary) }
                         }
                     }
                     items(accounts) { account -> NeoAccountCard(account) }
 
+                    // Recent Transactions
                     item {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            SectionHeader("Recent Transactions")
-                            TextButton(onClick = onNavigateToLedger) { Text("View All", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold) }
+                            SectionHeader("Recent Activity")
+                            TextButton(onClick = onNavigateToLedger) { Text("View All", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary) }
                         }
                     }
 
@@ -162,40 +195,96 @@ fun DashboardScreen(
     }
 }
 
-// ... [The Helper Components (ModernTransactionItem, HeldMoneyCard, etc.) remain exactly the same as your provided file. Ensure they are included below] ...
-// I am including them here for copy-paste safety:
+// --- 3. REFACTORED COMPONENTS (Using Theme Tokens) ---
 
 @Composable
 private fun ModernTransactionItem(transaction: Transaction, onClick: () -> Unit) {
+    // SEMANTIC COLOR LOGIC: Gold for Income, Coral for Expense
+    val isIncome = transaction.type == TransactionType.INCOME
+    val isExpense = transaction.type == TransactionType.EXPENSE
+
+    val amountColor = when {
+        isIncome -> MaterialTheme.colorScheme.tertiary // Gold
+        isExpense -> MaterialTheme.colorScheme.error // Coral
+        else -> MaterialTheme.colorScheme.onSurface
+    }
+
+    val icon = if (isIncome) Icons.Outlined.ArrowDownward else Icons.Outlined.ArrowUpward
+
     Row(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(modifier = Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)), contentAlignment = Alignment.Center) {
-            Icon(imageVector = if (transaction.type == TransactionType.INCOME) Icons.Outlined.ArrowDownward else Icons.Outlined.ArrowUpward, contentDescription = null, tint = if (transaction.type == TransactionType.INCOME) Color(0xFF006C5B) else Color(0xFFBA1A1A))
-        }
-        Spacer(modifier = Modifier.width(16.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(transaction.category, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (transaction.imageUris.isNotEmpty()) { Icon(Icons.Default.AttachFile, null, modifier = Modifier.size(12.dp), tint = MaterialTheme.colorScheme.primary); Spacer(modifier = Modifier.width(4.dp)) }
-                Text(formatDate(transaction.date), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // Icon Container
+        Surface(
+            shape = RoundedCornerShape(14.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+            modifier = Modifier.size(48.dp)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = amountColor,
+                    modifier = Modifier.size(20.dp)
+                )
             }
         }
-        Text(text = "${if (transaction.type == TransactionType.EXPENSE) "-" else "+"}${formatCurrency(transaction.amount)}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = if (transaction.type == TransactionType.EXPENSE) MaterialTheme.colorScheme.error else Color(0xFF006C5B))
+
+        Spacer(modifier = Modifier.width(16.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = transaction.category,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = formatDate(transaction.date),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        // Amount (Monospace Font applied via Typography.bodyLarge)
+        Text(
+            text = "${if (isExpense) "-" else "+"}${formatCurrency(transaction.amount)}",
+            style = MaterialTheme.typography.bodyLarge,
+            color = amountColor
+        )
     }
-    Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+    Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
 }
 
 @Composable
 fun HeldMoneyCard(amount: Double) {
-    Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF8E1)), border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFB300)), shape = RoundedCornerShape(16.dp)) {
-        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(modifier = Modifier.size(40.dp).background(Color(0xFFFFB300), CircleShape), contentAlignment = Alignment.Center) { Icon(Icons.Outlined.Info, null, tint = Color.White) }
+    // Uses Tertiary Container (Gold/Amber) for "Held" money
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+            contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+        ),
+        shape = RoundedCornerShape(20.dp),
+        elevation = CardDefaults.cardElevation(0.dp)
+    ) {
+        Row(modifier = Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
+            Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.tertiary,
+                modifier = Modifier.size(40.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(Icons.Outlined.Info, null, tint = MaterialTheme.colorScheme.onTertiary)
+                }
+            }
             Spacer(modifier = Modifier.width(16.dp))
             Column {
-                Text("Held for Others", style = MaterialTheme.typography.labelMedium, color = Color(0xFF6D4C41), fontWeight = FontWeight.Bold)
-                Text(formatCurrency(amount), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Color(0xFFE65100))
+                Text("Held for Others", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.7f))
+                Text(formatCurrency(amount), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -203,54 +292,103 @@ fun HeldMoneyCard(amount: Double) {
 
 @Composable
 fun NeoAccountCard(account: Account) {
-    val style = getAccountStyle(account)
-    Card(modifier = Modifier.fillMaxWidth().heightIn(min = 100.dp).padding(vertical = 4.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), elevation = CardDefaults.cardElevation(defaultElevation = 4.dp), shape = RoundedCornerShape(20.dp)) {
-        Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.SpaceBetween) {
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Box(modifier = Modifier.size(48.dp).clip(CircleShape).background(style.containerColor), contentAlignment = Alignment.Center) { Icon(style.icon, contentDescription = account.name, tint = style.color, modifier = Modifier.size(28.dp)) }
-                Spacer(modifier = Modifier.width(16.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(account.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                    Text(account.type.name, style = MaterialTheme.typography.labelMedium, color = Color.Gray)
+    // Dynamic styles based on Account Type, but mapped to Theme
+    val cardColor = MaterialTheme.colorScheme.surface
+    val contentColor = MaterialTheme.colorScheme.onSurface
+
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        colors = CardDefaults.cardColors(containerColor = cardColor),
+        elevation = CardDefaults.cardElevation(2.dp), // Subtle shadow
+        shape = RoundedCornerShape(20.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+    ) {
+        Row(
+            modifier = Modifier.padding(20.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Icon
+            Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.primaryContainer,
+                modifier = Modifier.size(48.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = if(account.type == AccountType.BANK) Icons.Default.AccountBalance else Icons.Default.Wallet,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
                 }
             }
-            Spacer(modifier = Modifier.height(16.dp))
-            Text("Current Balance", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
-            Text(formatCurrency(account.balance), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold, color = style.color, letterSpacing = (-0.5).sp)
+
+            Spacer(modifier = Modifier.width(16.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(account.name, style = MaterialTheme.typography.titleMedium, color = contentColor)
+                Text(account.type.name, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+
+            Text(
+                formatCurrency(account.balance),
+                style = MaterialTheme.typography.bodyLarge, // Monospace
+                color = MaterialTheme.colorScheme.primary
+            )
         }
     }
 }
 
-data class AccountStyle(val icon: ImageVector, val color: Color, val containerColor: Color)
-
 @Composable
-fun getAccountStyle(account: Account): AccountStyle {
-    val isDark = isSystemInDarkTheme()
-    val baseColor = when (account.type) { AccountType.CASH_DAILY -> Color(0xFF66BB6A); AccountType.BANK -> Color(0xFF42A5F5); AccountType.CASH_RESERVE -> Color(0xFFFFA726); else -> MaterialTheme.colorScheme.primary }
-    val icon = when (account.type) { AccountType.CASH_DAILY -> Icons.Default.Money; AccountType.BANK -> Icons.Default.AccountBalance; AccountType.CASH_RESERVE -> Icons.Default.CreditCard; else -> Icons.Default.AccountBalanceWallet }
-    val containerColor = if (isDark) baseColor.copy(alpha = 0.2f) else baseColor.copy(alpha = 0.1f)
-    return AccountStyle(icon, baseColor, containerColor)
-}
+private fun MiniStat(label: String, amount: Double, isIncome: Boolean) {
+    // Income = Tertiary (Gold), Expense = Error (Coral)
+    val color = if (isIncome) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.error
+    val icon = if (isIncome) Icons.Default.ArrowDownward else Icons.Default.ArrowUpward
 
-@Composable
-private fun MiniStat(label: String, amount: Double, isPositive: Boolean) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(modifier = Modifier.size(24.dp).background(if(isPositive) Color(0xFFE8F5E9) else Color(0xFFFFEBEE), CircleShape), contentAlignment = Alignment.Center) { Icon(if(isPositive) Icons.Default.ArrowDownward else Icons.Default.ArrowUpward, null, modifier = Modifier.size(14.dp), tint = if(isPositive) Color(0xFF2E7D32) else Color(0xFFC62828)) }
-        Spacer(modifier = Modifier.width(8.dp))
-        Column { Text(label, style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.8f)); Text(formatCurrency(amount), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = Color.White) }
+        Surface(
+            shape = CircleShape,
+            color = Color.White.copy(alpha = 0.2f), // Glassy circle
+            modifier = Modifier.size(32.dp)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(icon, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onPrimary)
+            }
+        }
+        Spacer(modifier = Modifier.width(12.dp))
+        Column {
+            Text(label.uppercase(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f))
+            Text(
+                formatCurrency(amount),
+                style = MaterialTheme.typography.titleMedium.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
+                color = MaterialTheme.colorScheme.onPrimary
+            )
+        }
     }
 }
 
 @Composable
 private fun ModernActionBtn(icon: ImageVector, label: String, color: Color, onClick: () -> Unit) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable(onClick = onClick)) {
-        Box(modifier = Modifier.size(60.dp).background(color.copy(alpha = 0.1f), RoundedCornerShape(18.dp)), contentAlignment = Alignment.Center) { Icon(icon, null, tint = color, modifier = Modifier.size(28.dp)) }
-        Spacer(modifier = Modifier.height(6.dp))
-        Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = color.copy(alpha = 0.1f),
+            modifier = Modifier.size(64.dp)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(icon, null, tint = color, modifier = Modifier.size(28.dp))
+            }
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface)
     }
 }
 
 @Composable
 private fun SectionHeader(title: String) {
-    Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.padding(bottom = 8.dp))
+    Text(
+        title,
+        style = MaterialTheme.typography.headlineMedium,
+        color = MaterialTheme.colorScheme.onSurface,
+        modifier = Modifier.padding(bottom = 8.dp)
+    )
 }
