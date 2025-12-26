@@ -6,66 +6,98 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.scitech.accountex.data.AppDatabase
 import com.scitech.accountex.data.TransactionType
+import com.scitech.accountex.repository.TransactionRepository
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import java.util.*
 
 class AnalyticsViewModel(application: Application) : AndroidViewModel(application) {
-    private val dao = AppDatabase.getDatabase(application).transactionDao()
+    private val db = AppDatabase.getDatabase(application)
+    private val repository = TransactionRepository(db, application)
 
     // 1. Time Filter
     private val _timeRange = MutableStateFlow(TimeRange.THIS_MONTH)
     val timeRange = _timeRange.asStateFlow()
 
-    // 2. Raw Data
-    private val _allTransactions = dao.getAllTransactions()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    // 2. Reactive Data Pipeline
+    // Whenever 'timeRange' changes, we switch the database query immediately.
+    // flatMapLatest ensures we cancel the old query and start the new one.
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val analyticsState = _timeRange.flatMapLatest { range ->
+        val (start, end) = calculateDateBoundaries(range)
 
-    // 3. Processed Data for UI
-    val analyticsState = combine(_allTransactions, _timeRange) { list, range ->
-        // Filter by Date
-        val filtered = list.filter { isInRange(it.date, range) }
+        // Combine the two fast queries: Totals and Categories
+        combine(
+            repository.getTotalsByType(start, end),
+            repository.getTopExpenseCategories(start, end)
+        ) { typeTotals, catTotals ->
 
-        // A. Totals
-        val income = filtered.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
-        val expense = filtered.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amount }
+            // A. Process Totals
+            // Note: We intentionally ignore TRANSFER/EXCHANGE for Profit/Loss calc
+            val income = typeTotals.find { it.type == TransactionType.INCOME }?.total ?: 0.0
+            val expense = typeTotals.find { it.type == TransactionType.EXPENSE }?.total ?: 0.0
 
-        // B. Category Breakdown (for Pie Chart)
-        val categories = filtered
-            .filter { it.type == TransactionType.EXPENSE }
-            .groupBy { it.category }
-            .map { (cat, txs) -> CategoryData(cat, txs.sumOf { it.amount }) }
-            .sortedByDescending { it.amount }
-            .take(5) // Top 5 Categories only
+            // B. Process Pie Chart Data
+            val totalExpense = catTotals.sumOf { it.total }
+            val pieData = catTotals.mapIndexed { index, cat ->
+                PieSlice(
+                    label = cat.category,
+                    value = cat.total.toFloat(),
+                    percentage = if(totalExpense > 0) (cat.total / totalExpense).toFloat() else 0f,
+                    color = getChartColor(index)
+                )
+            }
 
-        // C. Calculate Percentages for Pie Chart
-        val totalExpense = categories.sumOf { it.amount }
-        val pieData = categories.mapIndexed { index, cat ->
-            PieSlice(
-                label = cat.name,
-                value = cat.amount.toFloat(),
-                percentage = if(totalExpense > 0) (cat.amount / totalExpense).toFloat() else 0f,
-                color = getChartColor(index)
-            )
+            AnalyticsData(income, expense, pieData)
         }
-
-        AnalyticsData(income, expense, pieData)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AnalyticsData(0.0, 0.0, emptyList()))
 
     fun setTimeRange(range: TimeRange) { _timeRange.value = range }
 
-    // --- HELPERS ---
-    private fun isInRange(date: Long, range: TimeRange): Boolean {
-        val cal = Calendar.getInstance()
-        val txCal = Calendar.getInstance().apply { timeInMillis = date }
+    // --- OPTIMIZED DATE MATH (Calculated Once) ---
+    private fun calculateDateBoundaries(range: TimeRange): Pair<Long, Long> {
+        val calendar = Calendar.getInstance()
+        // Set to End of Today (future-proofing)
+        calendar.set(Calendar.HOUR_OF_DAY, 23)
+        calendar.set(Calendar.MINUTE, 59)
+        calendar.set(Calendar.SECOND, 59)
+        val end = calendar.timeInMillis
 
-        return when(range) {
-            TimeRange.THIS_MONTH -> cal.get(Calendar.MONTH) == txCal.get(Calendar.MONTH) && cal.get(Calendar.YEAR) == txCal.get(Calendar.YEAR)
-            TimeRange.LAST_MONTH -> {
-                cal.add(Calendar.MONTH, -1)
-                cal.get(Calendar.MONTH) == txCal.get(Calendar.MONTH) && cal.get(Calendar.YEAR) == txCal.get(Calendar.YEAR)
+        val start = when(range) {
+            TimeRange.THIS_MONTH -> {
+                calendar.set(Calendar.DAY_OF_MONTH, 1)
+                calendar.set(Calendar.HOUR_OF_DAY, 0)
+                calendar.set(Calendar.MINUTE, 0)
+                calendar.set(Calendar.SECOND, 0)
+                calendar.timeInMillis
             }
-            TimeRange.ALL_TIME -> true
+            TimeRange.LAST_MONTH -> {
+                // Go to 1st of current month
+                calendar.set(Calendar.DAY_OF_MONTH, 1)
+                calendar.set(Calendar.HOUR_OF_DAY, 0)
+                calendar.set(Calendar.MINUTE, 0)
+                calendar.set(Calendar.SECOND, 0)
+                // Subtract 1 month to get 1st of last month
+                calendar.add(Calendar.MONTH, -1)
+                calendar.timeInMillis
+            }
+            TimeRange.ALL_TIME -> 0L
         }
+
+        // Fix "End Date" for Last Month (must be last second of previous month)
+        val finalEnd = if (range == TimeRange.LAST_MONTH) {
+            val c = Calendar.getInstance()
+            c.set(Calendar.DAY_OF_MONTH, 1)
+            c.set(Calendar.HOUR_OF_DAY, 0)
+            c.set(Calendar.MINUTE, 0)
+            c.set(Calendar.SECOND, 0)
+            c.add(Calendar.SECOND, -1) // Back 1 second
+            c.timeInMillis
+        } else {
+            end
+        }
+
+        return Pair(start, finalEnd)
     }
 
     private fun getChartColor(index: Int): Color {
@@ -80,7 +112,7 @@ class AnalyticsViewModel(application: Application) : AndroidViewModel(applicatio
     }
 }
 
+// Re-defining data classes here to ensure no imports break
 enum class TimeRange { THIS_MONTH, LAST_MONTH, ALL_TIME }
 data class AnalyticsData(val income: Double, val expense: Double, val pieSlices: List<PieSlice>)
-data class CategoryData(val name: String, val amount: Double)
 data class PieSlice(val label: String, val value: Float, val percentage: Float, val color: Color)

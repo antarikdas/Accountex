@@ -26,10 +26,11 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
-import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.AccountBalanceWallet
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -39,6 +40,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -65,45 +67,71 @@ fun TransactionDetailScreen(
 ) {
     val context = LocalContext.current
     val transaction by viewModel.transaction.collectAsState()
-    val relatedNotes by viewModel.relatedNotes.collectAsState() // NEW: Cash Trail Data
-    val errorMsg by viewModel.errorEvent.collectAsState()
+    val relatedNotes by viewModel.relatedNotes.collectAsState()
+    val accounts by viewModel.accounts.collectAsState() // NEW: Needed for Account Switcher
+
     val shouldNavigateBack by viewModel.navigationEvent.collectAsState()
 
-    // Suggestions for Editing
+    // Suggestions
     val categorySuggestions by viewModel.categorySuggestions.collectAsState()
-    val descriptionSuggestions by viewModel.descriptionSuggestions.collectAsState()
 
-    // Editing State
-    var isEditing by remember { mutableStateOf(false) }
-    var editAmount by remember { mutableStateOf("") }
-    var editDate by remember { mutableLongStateOf(0L) }
-    var editCategory by remember { mutableStateOf("") }
-    var editDescription by remember { mutableStateOf("") }
+    // --- STATE MANAGEMENT ---
+    var isEditing by rememberSaveable { mutableStateOf(false) }
 
-    // Image Management State
+    // Form States
+    var editAmount by rememberSaveable { mutableStateOf("") }
+    var editDate by rememberSaveable { mutableLongStateOf(0L) }
+    var editCategory by rememberSaveable { mutableStateOf("") }
+    var editDescription by rememberSaveable { mutableStateOf("") }
+    var editAccountId by rememberSaveable { mutableIntStateOf(0) } // NEW
+
+    // Image States
     var selectedImageUriToManage by remember { mutableStateOf<String?>(null) }
     var selectedImageUriToZoom by remember { mutableStateOf<String?>(null) }
     var tempPhotoUri by remember { mutableStateOf<Uri?>(null) }
 
-    // --- Image Launchers (Same as before) ---
-    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success -> if (success && tempPhotoUri != null) { viewModel.addImageUri(tempPhotoUri.toString()); selectedImageUriToManage = null } }
-    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> if (uri != null) { if (selectedImageUriToManage == "ADD") viewModel.addImageUri(uri.toString()) else if (selectedImageUriToManage != null) viewModel.replaceImageUri(selectedImageUriToManage!!, uri.toString()); selectedImageUriToManage = null } }
-    val cameraPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted -> if (isGranted) { val (file, uri) = createImageFile(context); tempPhotoUri = uri; cameraLauncher.launch(uri) } else { Toast.makeText(context, "Camera permission required.", Toast.LENGTH_SHORT).show(); selectedImageUriToManage = null } }
-
+    // --- INITIALIZATION ---
     LaunchedEffect(transactionId) { viewModel.loadTransaction(transactionId) }
-    LaunchedEffect(shouldNavigateBack) { if (shouldNavigateBack) onNavigateBack() }
-    LaunchedEffect(errorMsg) { if (errorMsg != null) { Toast.makeText(context, errorMsg, Toast.LENGTH_LONG).show(); viewModel.clearError() } }
 
-    LaunchedEffect(transaction) {
-        transaction?.let {
-            editAmount = it.amount.toString()
-            editDate = it.date
-            editCategory = it.category
-            editDescription = it.description
+    // Populate form data when transaction is loaded or mode changes
+    LaunchedEffect(transaction, isEditing) {
+        if (!isEditing && transaction != null) {
+            editAmount = transaction!!.amount.toString()
+            editDate = transaction!!.date
+            editCategory = transaction!!.category
+            editDescription = transaction!!.description
+            editAccountId = transaction!!.accountId
         }
     }
 
-    BackHandler { onNavigateBack() }
+    LaunchedEffect(shouldNavigateBack) { if (shouldNavigateBack) onNavigateBack() }
+
+    BackHandler {
+        if (isEditing) isEditing = false else onNavigateBack()
+    }
+
+    // --- LAUNCHERS (Camera/Gallery) ---
+    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        if (success && tempPhotoUri != null) {
+            viewModel.addImageUri(tempPhotoUri.toString())
+            selectedImageUriToManage = null
+        }
+    }
+    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            viewModel.addImageUri(uri.toString())
+            selectedImageUriToManage = null
+        }
+    }
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
+        if (isGranted) {
+            val (file, uri) = createImageFile(context)
+            tempPhotoUri = uri
+            cameraLauncher.launch(uri)
+        } else {
+            Toast.makeText(context, "Camera permission required.", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -121,18 +149,29 @@ fun TransactionDetailScreen(
         },
         bottomBar = {
             if (isEditing) {
-                Button(
-                    onClick = {
-                        val newAmount = editAmount.toDoubleOrNull()
-                        if (newAmount != null && newAmount > 0) {
-                            viewModel.updateTransaction(transactionId, newAmount, editDate, editCategory, editDescription)
-                            isEditing = false
-                            Toast.makeText(context, "Saved Successfully", Toast.LENGTH_SHORT).show()
-                        } else Toast.makeText(context, "Invalid Amount", Toast.LENGTH_SHORT).show()
-                    },
-                    modifier = Modifier.fillMaxWidth().padding(16.dp).height(56.dp),
-                    shape = RoundedCornerShape(16.dp)
-                ) { Text("Save Changes", fontSize = 18.sp, fontWeight = FontWeight.Bold) }
+                Surface(shadowElevation = 8.dp) {
+                    Button(
+                        onClick = {
+                            val newAmount = editAmount.toDoubleOrNull()
+                            if (newAmount != null && newAmount > 0) {
+                                // CALLS THE NEW ROBUST VIEWMODEL FUNCTION
+                                viewModel.updateFullTransaction(
+                                    newAmount = newAmount,
+                                    newDate = editDate,
+                                    newCategory = editCategory,
+                                    newDescription = editDescription,
+                                    newAccountId = editAccountId
+                                )
+                                isEditing = false
+                                Toast.makeText(context, "Update Successful", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(context, "Invalid Amount", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().padding(16.dp).height(56.dp),
+                        shape = RoundedCornerShape(16.dp)
+                    ) { Text("Save Changes", fontSize = 18.sp, fontWeight = FontWeight.Bold) }
+                }
             }
         }
     ) { paddingValues ->
@@ -141,98 +180,113 @@ fun TransactionDetailScreen(
                 CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
             } else {
                 val tx = transaction!!
+                val accountName = accounts.find { it.id == tx.accountId }?.name ?: "Unknown Account"
 
-                // --- DYNAMIC THEME COLOR ---
+                // Theme Color Logic
                 val mainColor = when (tx.type) {
-                    TransactionType.EXPENSE -> Color(0xFFD32F2F) // Premium Red
-                    TransactionType.INCOME -> Color(0xFF2E7D32)  // Premium Green
-                    TransactionType.TRANSFER -> Color(0xFF3B82F6) // Premium Blue
-                    else -> Color(0xFFF57C00) // Amber
-                }
-
-                // --- TYPE LABEL TEXT ---
-                val typeLabel = when(tx.type) {
-                    TransactionType.INCOME -> "Income"
-                    TransactionType.EXPENSE -> "Expense"
-                    TransactionType.THIRD_PARTY_IN -> "Held for Others"
-                    TransactionType.THIRD_PARTY_OUT -> "Handed Over"
-                    TransactionType.TRANSFER -> "Transfer"
-                    else -> "Exchange"
+                    TransactionType.EXPENSE -> Color(0xFFD32F2F)
+                    TransactionType.INCOME -> Color(0xFF2E7D32)
+                    TransactionType.TRANSFER -> Color(0xFF3B82F6)
+                    else -> Color(0xFFF57C00)
                 }
 
                 Column(
                     modifier = Modifier.fillMaxSize().padding(24.dp).verticalScroll(rememberScrollState()),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    // Amount
+                    // --- 1. AMOUNT HEADER ---
                     Text("Amount", style = MaterialTheme.typography.labelMedium, color = Color.Gray)
                     Spacer(modifier = Modifier.height(8.dp))
+
                     if (isEditing) {
                         OutlinedTextField(
                             value = editAmount,
-                            onValueChange = { editAmount = it },
-                            textStyle = MaterialTheme.typography.displayMedium.copy(textAlign = androidx.compose.ui.text.style.TextAlign.Center),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Color.Transparent, unfocusedBorderColor = Color.Transparent),
-                            modifier = Modifier.fillMaxWidth()
+                            onValueChange = { if (it.all { char -> char.isDigit() || char == '.' }) editAmount = it },
+                            textStyle = MaterialTheme.typography.displayMedium.copy(textAlign = TextAlign.Center),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = mainColor,
+                                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
+                            )
                         )
                     } else {
-                        Text(
-                            formatCurrency(tx.amount),
-                            style = MaterialTheme.typography.displayMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = mainColor
-                        )
-                        // Type Badge
+                        Text(formatCurrency(tx.amount), style = MaterialTheme.typography.displayMedium, fontWeight = FontWeight.Bold, color = mainColor)
                         Spacer(modifier = Modifier.height(8.dp))
+                        // TYPE BADGE
                         Surface(color = mainColor.copy(alpha = 0.1f), shape = RoundedCornerShape(8.dp)) {
-                            Text(typeLabel, style = MaterialTheme.typography.labelMedium, color = mainColor, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
+                            Text(tx.type.name.replace("_", " "), style = MaterialTheme.typography.labelMedium, color = mainColor, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
                         }
                     }
+
                     Spacer(modifier = Modifier.height(32.dp))
 
+                    // --- 2. DETAILS CARD ---
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        shape = RoundedCornerShape(24.dp)
+                        shape = RoundedCornerShape(24.dp),
+                        elevation = CardDefaults.cardElevation(2.dp)
                     ) {
                         Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
 
-                            // 1. Related Party / Transfer Info
+                            // A. ACCOUNT (Editable)
+                            if (isEditing) {
+                                AccountSelectorRow(
+                                    currentId = editAccountId,
+                                    accounts = accounts, // Pass the list
+                                    onSelect = { editAccountId = it },
+                                    color = mainColor
+                                )
+                            } else {
+                                DetailRow(Icons.Rounded.AccountBalanceWallet, "Account", accountName, mainColor)
+                            }
+
+                            // B. PARTY (Read Only)
                             if (!tx.thirdPartyName.isNullOrEmpty()) {
                                 DetailRow(Icons.Rounded.Person, "Related Party", tx.thirdPartyName, mainColor)
                             }
 
-                            // 2. Category
+                            // C. CATEGORY (Editable)
                             if (isEditing) {
                                 EditInputWrapper("Category", Icons.Default.Category, mainColor) {
-                                    SmartInput(value = editCategory, onValueChange = { editCategory = it }, suggestions = categorySuggestions, placeholder = "Enter category")
+                                    SmartInput(value = editCategory, onValueChange = { editCategory = it }, suggestions = categorySuggestions, placeholder = "Category")
                                 }
                             } else {
                                 DetailRow(Icons.Default.Category, "Category", tx.category, mainColor)
                             }
 
-                            // 3. Date
+                            // D. DATE (Editable)
                             Row(
                                 modifier = Modifier.fillMaxWidth().clickable(enabled = isEditing) {
                                     val c = Calendar.getInstance().apply { timeInMillis = editDate }
-                                    DatePickerDialog(context, { _, y, m, d -> TimePickerDialog(context, { _, h, min -> c.set(y, m, d, h, min); editDate = c.timeInMillis }, c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE), false).show() }, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)).show()
+                                    DatePickerDialog(context, { _, y, m, d ->
+                                        TimePickerDialog(context, { _, h, min ->
+                                            c.set(y, m, d, h, min)
+                                            editDate = c.timeInMillis
+                                        }, c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE), false).show()
+                                    }, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)).show()
                                 },
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Box(Modifier.size(48.dp).background(mainColor.copy(0.1f), CircleShape), Alignment.Center) { Icon(Icons.Default.CalendarToday, null, tint = mainColor) }
                                 Spacer(Modifier.width(16.dp))
-                                Column {
+                                Column(Modifier.weight(1f)) {
                                     Text("Date & Time", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
-                                    Text(if(isEditing) SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault()).format(Date(editDate)) else formatDate(tx.date), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = if(isEditing) mainColor else MaterialTheme.colorScheme.onSurface)
+                                    Text(if(isEditing) SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault()).format(Date(editDate)) else formatDate(tx.date), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                                 }
-                                if(isEditing) { Spacer(Modifier.weight(1f)); Icon(Icons.Outlined.Edit, null, tint = mainColor, modifier = Modifier.size(16.dp)) }
+                                if(isEditing) Icon(Icons.Outlined.Edit, null, tint = mainColor, modifier = Modifier.size(20.dp))
                             }
 
-                            // 4. Description
+                            // E. DESCRIPTION (Editable)
                             if (isEditing) {
                                 EditInputWrapper("Description", Icons.Default.Description, mainColor) {
-                                    SmartInput(value = editDescription, onValueChange = { editDescription = it }, suggestions = descriptionSuggestions, placeholder = "Add description")
+                                    OutlinedTextField(
+                                        value = editDescription,
+                                        onValueChange = { editDescription = it },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        placeholder = { Text("Add notes...") }
+                                    )
                                 }
                             } else if (tx.description.isNotEmpty()) {
                                 DetailRow(Icons.Default.Description, "Description", tx.description, mainColor)
@@ -240,7 +294,7 @@ fun TransactionDetailScreen(
                         }
                     }
 
-                    // --- NEW: CASH TRAIL SECTION ---
+                    // --- 3. CASH TRAIL (Read Only context) ---
                     val spentNotes = relatedNotes.filter { it.spentTransactionId == tx.id }
                     val receivedNotes = relatedNotes.filter { it.receivedTransactionId == tx.id }
 
@@ -248,51 +302,45 @@ fun TransactionDetailScreen(
                         Spacer(modifier = Modifier.height(24.dp))
                         Card(
                             modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
                             shape = RoundedCornerShape(24.dp)
                         ) {
                             Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                                Text("Physical Cash Trail", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                                Divider(color = MaterialTheme.colorScheme.surfaceVariant)
-
-                                if(spentNotes.isNotEmpty()) {
-                                    NoteGroupRow(label = if(tx.type == TransactionType.TRANSFER) "Moved From Source" else "Paid Out", notes = spentNotes, color = Color(0xFFD32F2F))
-                                }
-                                if(receivedNotes.isNotEmpty()) {
-                                    NoteGroupRow(label = if(tx.type == TransactionType.TRANSFER) "Added To Destination" else "Received", notes = receivedNotes, color = Color(0xFF2E7D32))
-                                }
+                                Text("PHYSICAL CASH RECORD", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color.Gray)
+                                if(spentNotes.isNotEmpty()) NoteGroupRow("Paid using", spentNotes, Color(0xFFD32F2F))
+                                if(receivedNotes.isNotEmpty()) NoteGroupRow("Received / Change", receivedNotes, Color(0xFF2E7D32))
                             }
                         }
                     }
 
-                    // --- IMAGE GALLERY ---
+                    // --- 4. ATTACHMENTS ---
                     Spacer(modifier = Modifier.height(24.dp))
                     ImageGallerySection(
                         uris = tx.imageUris,
                         onAddClick = { selectedImageUriToManage = "ADD" },
-                        onImageClick = { uriStr -> selectedImageUriToManage = uriStr },
-                        onZoomClick = { uriStr -> selectedImageUriToZoom = uriStr }
+                        onImageClick = { uri -> selectedImageUriToManage = uri },
+                        onZoomClick = { uri -> selectedImageUriToZoom = uri }
                     )
+
+                    Spacer(modifier = Modifier.height(80.dp))
                 }
             }
         }
     }
 
-    // --- Image Options ---
+    // --- DIALOGS (Image handling) ---
     if (selectedImageUriToManage != null) {
-        val isAddMode = selectedImageUriToManage == "ADD"
+        val isAdd = selectedImageUriToManage == "ADD"
         AlertDialog(
             onDismissRequest = { selectedImageUriToManage = null },
-            title = { Text(if (isAddMode) "Add New Attachment" else "Manage Attachment") },
-            text = {
-                Column {
-                    ListItem(headlineContent = { Text(if (isAddMode) "Take New Photo" else "Replace with Camera Photo") }, leadingContent = { Icon(Icons.Default.CameraAlt, null) }, modifier = Modifier.clickable { if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) { val (file, uri) = createImageFile(context); tempPhotoUri = uri; cameraLauncher.launch(uri) } else { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) } })
-                    ListItem(headlineContent = { Text("Choose from Gallery") }, leadingContent = { Icon(Icons.Default.Collections, null) }, modifier = Modifier.clickable { galleryLauncher.launch("image/*") })
-                    if (!isAddMode) {
-                        ListItem(headlineContent = { Text("Delete Photo") }, leadingContent = { Icon(Icons.Outlined.Delete, null, tint = MaterialTheme.colorScheme.error) }, modifier = Modifier.clickable { viewModel.removeImageUri(selectedImageUriToManage!!); selectedImageUriToManage = null })
-                    }
+            title = { Text(if (isAdd) "Add Photo" else "Manage Photo") },
+            text = { Column {
+                ListItem(headlineContent = { Text("Take New Photo") }, leadingContent = { Icon(Icons.Default.CameraAlt, null) }, modifier = Modifier.clickable { if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) { val (f, u) = createImageFile(context); tempPhotoUri = u; cameraLauncher.launch(u) } else { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) } })
+                ListItem(headlineContent = { Text("Select from Gallery") }, leadingContent = { Icon(Icons.Default.Collections, null) }, modifier = Modifier.clickable { galleryLauncher.launch("image/*") })
+                if (!isAdd) {
+                    ListItem(headlineContent = { Text("Delete This Photo") }, leadingContent = { Icon(Icons.Outlined.Delete, null, tint = Color.Red) }, modifier = Modifier.clickable { viewModel.removeImageUri(selectedImageUriToManage!!); selectedImageUriToManage = null })
                 }
-            },
+            }},
             confirmButton = { TextButton(onClick = { selectedImageUriToManage = null }) { Text("Cancel") } }
         )
     }
@@ -306,9 +354,41 @@ fun TransactionDetailScreen(
     }
 }
 
-// ===========================================
-// COMPONENTS
-// ===========================================
+// ==========================================
+// NEW SUB-COMPONENTS
+// ==========================================
+
+@Composable
+fun AccountSelectorRow(currentId: Int, accounts: List<com.scitech.accountex.data.Account>, onSelect: (Int) -> Unit, color: Color) {
+    var expanded by remember { mutableStateOf(false) }
+    val currentName = accounts.find { it.id == currentId }?.name ?: "Select Account"
+
+    Box {
+        Row(
+            modifier = Modifier.fillMaxWidth().clickable { expanded = true },
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(Modifier.size(48.dp).background(color.copy(0.1f), CircleShape), Alignment.Center) {
+                Icon(Icons.Rounded.AccountBalanceWallet, null, tint = color)
+            }
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Account", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                Text(currentName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            }
+            Icon(Icons.Default.ArrowDropDown, null, tint = Color.Gray)
+        }
+
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            accounts.forEach { acc ->
+                DropdownMenuItem(
+                    text = { Text(acc.name) },
+                    onClick = { onSelect(acc.id); expanded = false }
+                )
+            }
+        }
+    }
+}
 
 @Composable
 fun NoteGroupRow(label: String, notes: List<CurrencyNote>, color: Color) {
@@ -316,12 +396,10 @@ fun NoteGroupRow(label: String, notes: List<CurrencyNote>, color: Color) {
         Box(modifier = Modifier.padding(top = 6.dp).size(8.dp).background(color, CircleShape))
         Spacer(modifier = Modifier.width(12.dp))
         Column {
-            Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-            Spacer(modifier = Modifier.height(4.dp))
-            notes.groupBy { it.denomination }.forEach { (denom, list) ->
-                val isCoin = denom <= 20 // Helper Assumption
-                val type = if(isCoin) "Coins" else "Notes"
-                Text("${list.size}x ₹$denom $type", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+            Text(label, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+            notes.groupBy { it.denomination }.toSortedMap(reverseOrder()).forEach { (denom, list) ->
+                val type = if(denom <= 20) "Coins" else "Notes"
+                Text("${list.size} x ₹$denom $type", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
             }
         }
     }
@@ -329,21 +407,23 @@ fun NoteGroupRow(label: String, notes: List<CurrencyNote>, color: Color) {
 
 @Composable
 private fun ImageGallerySection(uris: List<String>, onAddClick: () -> Unit, onImageClick: (String) -> Unit, onZoomClick: (String) -> Unit) {
-    Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.Start) {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text("Attachments (${uris.size})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Button(onClick = onAddClick, shape = RoundedCornerShape(12.dp), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)) { Icon(Icons.Default.Add, null, modifier = Modifier.size(20.dp)); Spacer(Modifier.width(8.dp)); Text("Add") }
+    Column {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("Attachments", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Icon(Icons.Default.Add, "Add", modifier = Modifier.clickable { onAddClick() })
         }
-        Spacer(modifier = Modifier.height(12.dp))
-        if (uris.isEmpty()) Text("No images attached.", style = MaterialTheme.typography.bodyMedium, color = Color.Gray) else LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) { itemsIndexed(uris) { index, uriStr -> ImageThumbnail(uriStr, index, onImageClick, onZoomClick) } }
-    }
-}
-
-@Composable
-private fun ImageThumbnail(uriStr: String, index: Int, onImageClick: (String) -> Unit, onZoomClick: (String) -> Unit) {
-    Box(modifier = Modifier.size(100.dp).clip(RoundedCornerShape(16.dp)).background(Color.LightGray).border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp)).clickable { onZoomClick(uriStr) }) {
-        AsyncImage(model = Uri.parse(uriStr), contentDescription = "Attachment ${index + 1}", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-        Icon(Icons.Default.MoreVert, contentDescription = "Manage", tint = Color.White, modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.5f)).clickable { onImageClick(uriStr) })
+        Spacer(Modifier.height(8.dp))
+        if (uris.isEmpty()) Text("No attachments", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+        else LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            itemsIndexed(uris) { idx, uri ->
+                AsyncImage(
+                    model = Uri.parse(uri),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.size(80.dp).clip(RoundedCornerShape(12.dp)).border(1.dp, Color.LightGray, RoundedCornerShape(12.dp)).clickable { onZoomClick(uri) }
+                )
+            }
+        }
     }
 }
 

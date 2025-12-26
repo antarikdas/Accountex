@@ -11,6 +11,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MonetizationOn
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material3.*
@@ -21,7 +23,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.scitech.accountex.data.Account
 import com.scitech.accountex.utils.formatCurrency
 import com.scitech.accountex.viewmodel.InventoryItem
 import com.scitech.accountex.viewmodel.NoteInventoryViewModel
@@ -31,8 +32,8 @@ private val VaultBg = Color(0xFFF1F5F9)
 private val SlateText = Color(0xFF1E293B)
 private val NoteColor = Color(0xFF10B981)
 private val CoinColor = Color(0xFFF59E0B)
-private val SelectedChip = Color(0xFF1E293B) // Dark Slate for selected
-private val UnselectedChip = Color(0xFFFFFFFF) // White for unselected
+private val SelectedChip = Color(0xFF1E293B)
+private val UnselectedChip = Color(0xFFFFFFFF)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -65,13 +66,11 @@ fun NoteInventoryScreen(
                 .padding(padding)
                 .fillMaxSize()
         ) {
-
-            // 1. ACCOUNT FILTER CHIPS (Horizontal Scroll)
+            // 1. FILTERS
             LazyRow(
                 contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                // "All" Chip
                 item {
                     InventoryFilterChip(
                         label = "All Vaults",
@@ -79,8 +78,6 @@ fun NoteInventoryScreen(
                         onClick = { viewModel.selectAccount(0) }
                     )
                 }
-
-                // Individual Account Chips
                 items(accounts) { account ->
                     InventoryFilterChip(
                         label = account.name,
@@ -93,77 +90,45 @@ fun NoteInventoryScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             Column(modifier = Modifier.padding(horizontal = 24.dp)) {
-                // 2. TOTAL SUMMARY CARD
+                // 2. SUMMARY CARD
                 Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 24.dp),
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp),
                     shape = RoundedCornerShape(24.dp),
                     colors = CardDefaults.cardColors(containerColor = SlateText),
                     elevation = CardDefaults.cardElevation(8.dp)
                 ) {
                     Row(
-                        modifier = Modifier
-                            .padding(24.dp)
-                            .fillMaxWidth(),
+                        modifier = Modifier.padding(24.dp).fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column {
-                            // Dynamic Label based on selection
                             val currentAccountName = if (selectedAccountId == 0) "All Accounts" else accounts.find { it.id == selectedAccountId }?.name ?: "Account"
-
                             Text("Total Value ($currentAccountName)", style = MaterialTheme.typography.labelMedium, color = Color.Gray)
                             Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                formatCurrency(state.grandTotal),
-                                style = MaterialTheme.typography.headlineMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
-                            )
+                            Text(formatCurrency(state.grandTotal), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = Color.White)
                         }
-                        Box(
-                            modifier = Modifier
-                                .size(48.dp)
-                                .background(Color.White.copy(0.1f), CircleShape),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                state.totalNotes.toString(),
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = NoteColor
-                            )
+                        Box(modifier = Modifier.size(48.dp).background(Color.White.copy(0.1f), CircleShape), contentAlignment = Alignment.Center) {
+                            Text(state.totalNotes.toString(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = NoteColor)
                         }
                     }
                 }
 
                 // 3. HEADERS
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
+                Row(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("DENOMINATION", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color.Gray)
                     Text("TOTAL VALUE", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color.Gray)
                 }
 
-                // 4. INVENTORY LIST
+                // 4. LIST
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     contentPadding = PaddingValues(bottom = 80.dp)
                 ) {
                     if (state.items.isEmpty()) {
-                        item {
-                            Box(modifier = Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
-                                Text("No cash notes found in this wallet.", color = Color.Gray)
-                            }
-                        }
+                        item { Box(modifier = Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) { Text("No cash found.", color = Color.Gray) } }
                     } else {
-                        items(state.items) { item ->
-                            InventoryItemCard(item)
-                        }
+                        items(state.items) { item -> InventoryItemCard(item) }
                     }
                 }
             }
@@ -180,12 +145,7 @@ fun InventoryFilterChip(label: String, isSelected: Boolean, onClick: () -> Unit)
         shadowElevation = if (isSelected) 4.dp else 0.dp,
         modifier = Modifier.clickable(onClick = onClick)
     ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp)
-        )
+        Text(text = label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp))
     }
 }
 
@@ -193,60 +153,49 @@ fun InventoryFilterChip(label: String, isSelected: Boolean, onClick: () -> Unit)
 fun InventoryItemCard(item: InventoryItem) {
     val isCoin = item.isCoin
     val mainColor = if (isCoin) CoinColor else NoteColor
-    // Using a different icon for notes vs coins creates a nice visual distinction
-    val icon = if (isCoin) Icons.Default.MonetizationOn else Icons.Outlined.Description
+    var expanded by remember { mutableStateOf(false) }
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded },
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
         elevation = CardDefaults.cardElevation(2.dp)
     ) {
-        Row(
-            modifier = Modifier
-                .padding(16.dp)
-                .fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Icon Stack
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .background(mainColor.copy(alpha = 0.1f), RoundedCornerShape(12.dp)),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    "₹${item.denomination}",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = mainColor
-                )
+        Column {
+            // MAIN ROW
+            Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Box(modifier = Modifier.size(48.dp).background(mainColor.copy(alpha = 0.1f), RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
+                    Text("₹${item.denomination}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = mainColor)
+                }
+                Spacer(modifier = Modifier.width(16.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(if (isCoin) "Coin Stack" else "Currency Note", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                    Text("${item.count} pcs", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = SlateText)
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(formatCurrency(item.totalValue), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = SlateText)
+                    Icon(if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown, null, tint = Color.Gray, modifier = Modifier.size(20.dp))
+                }
             }
 
-            Spacer(modifier = Modifier.width(16.dp))
+            // DROPDOWN DETAILS
+            if (expanded && !isCoin) {
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = Color.LightGray.copy(alpha = 0.3f))
+                Column(modifier = Modifier.fillMaxWidth().padding(16.dp).background(Color(0xFFF8FAFC), RoundedCornerShape(8.dp)).padding(12.dp)) {
+                    Text("Serial Numbers", style = MaterialTheme.typography.labelSmall, color = Color.Gray, modifier = Modifier.padding(bottom = 8.dp))
 
-            // Count
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    if (isCoin) "Coin Stack" else "Currency Note",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color.Gray
-                )
-                Text(
-                    "${item.count} pcs",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = SlateText
-                )
+                    item.notes.forEach { note ->
+                        Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text(note.serialNumber, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = SlateText)
+
+                            // Highlight Third Party Notes
+                            if (note.isThirdParty) {
+                                Text("Held (${note.thirdPartyName})", style = MaterialTheme.typography.labelSmall, color = Color(0xFFEF4444), fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
             }
-
-            // Total Value
-            Text(
-                formatCurrency(item.totalValue),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = SlateText
-            )
         }
     }
 }
