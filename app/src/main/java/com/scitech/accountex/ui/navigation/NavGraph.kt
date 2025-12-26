@@ -12,7 +12,8 @@ import com.scitech.accountex.viewmodel.*
 
 // Define Routes
 sealed class Screen(val route: String) {
-    object Security : Screen("security") // <--- NEW SCREEN
+    object Splash : Screen("splash") // <--- 1. NEW ROUTE
+    object Security : Screen("security")
     object Dashboard : Screen("dashboard")
     object AddTransaction : Screen("add_transaction")
     object Ledger : Screen("ledger")
@@ -40,15 +41,26 @@ fun NavGraph(
 ) {
     NavHost(
         navController = navController,
-        startDestination = Screen.Security.route // <--- MUST BE SECURITY
+        startDestination = Screen.Splash.route // <--- 2. START HERE
     ) {
-        // --- 1. SECURITY SCREEN (START) ---
+        // --- 1. SPLASH SCREEN (The Entrance) ---
+        composable(Screen.Splash.route) {
+            SplashScreen(
+                onAnimationFinished = {
+                    // When animation ends, go to Security.
+                    // popUpTo(Splash) ensures back button exits app, doesn't return to splash.
+                    navController.navigate(Screen.Security.route) {
+                        popUpTo(Screen.Splash.route) { inclusive = true }
+                    }
+                }
+            )
+        }
+
+        // --- 2. SECURITY SCREEN ---
         composable(Screen.Security.route) {
             SecurityScreen(
                 onLoginSuccess = {
-                    // When login/pin succeeds, go to Dashboard
-                    // popUpTo(Security) ensures pressing "Back" from Dashboard exits the app
-                    // instead of going back to the lock screen.
+                    // When login succeeds, go to Dashboard.
                     navController.navigate(Screen.Dashboard.route) {
                         popUpTo(Screen.Security.route) { inclusive = true }
                     }
@@ -56,7 +68,7 @@ fun NavGraph(
             )
         }
 
-        // --- 2. DASHBOARD ---
+        // --- 3. DASHBOARD ---
         composable(Screen.Dashboard.route) {
             DashboardScreen(
                 viewModel = dashboardViewModel,
@@ -72,15 +84,15 @@ fun NavGraph(
             )
         }
 
-        // --- 3. ADD TRANSACTION ---
+        // ... (All other routes remain exactly the same below) ...
+        // --- ADD TRANSACTION ---
         composable(Screen.AddTransaction.route) {
             AddTransactionScreen(
                 viewModel = addTransactionViewModel,
                 onNavigateBack = { navController.popBackStack() }
             )
         }
-
-        // --- 4. LEDGER (HISTORY) ---
+        // --- LEDGER ---
         composable(Screen.Ledger.route) {
             LedgerScreen(
                 viewModel = ledgerViewModel,
@@ -88,8 +100,7 @@ fun NavGraph(
                 onTransactionClick = { id -> navController.navigate(Screen.TransactionDetail.createRoute(id)) }
             )
         }
-
-        // --- 5. TEMPLATES ---
+        // --- TEMPLATES ---
         composable(Screen.Templates.route) {
             TemplatesScreen(
                 viewModel = templateViewModel,
@@ -100,40 +111,35 @@ fun NavGraph(
                 }
             )
         }
-
-        // --- 6. ANALYTICS ---
+        // --- ANALYTICS ---
         composable(Screen.Analytics.route) {
             AnalyticsScreen(
                 viewModel = analyticsViewModel,
                 onNavigateBack = { navController.popBackStack() }
             )
         }
-
-        // --- 7. NOTE INVENTORY ---
+        // --- NOTE INVENTORY ---
         composable(Screen.NoteInventory.route) {
             NoteInventoryScreen(
                 viewModel = noteInventoryViewModel,
                 onNavigateBack = { navController.popBackStack() }
             )
         }
-
-        // --- 8. MANAGE ACCOUNTS ---
+        // --- MANAGE ACCOUNTS ---
         composable(Screen.ManageAccounts.route) {
             ManageAccountsScreen(
                 viewModel = manageAccountsViewModel,
                 onNavigateBack = { navController.popBackStack() }
             )
         }
-
-        // --- 9. BACKUP ---
+        // --- BACKUP ---
         composable(Screen.Backup.route) {
             DataManagementScreen(
                 viewModel = dataManagementViewModel,
                 onNavigateBack = { navController.popBackStack() }
             )
         }
-
-        // --- 10. TRANSACTION DETAIL ---
+        // --- TRANSACTION DETAIL ---
         composable(
             route = Screen.TransactionDetail.route,
             arguments = listOf(navArgument("txId") { type = NavType.IntType })
