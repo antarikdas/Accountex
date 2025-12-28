@@ -1,127 +1,85 @@
 package com.scitech.accountex.viewmodel
 
 import android.app.Application
-import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.scitech.accountex.data.*
+import com.scitech.accountex.data.Account
+import com.scitech.accountex.data.AppDatabase
+import com.scitech.accountex.data.CurrencyNote
+import com.scitech.accountex.data.Transaction
 import com.scitech.accountex.repository.TransactionRepository
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.io.File
-import java.io.FileOutputStream
-import java.util.UUID
 
 class TransactionDetailViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val database = AppDatabase.getDatabase(application)
-    private val repository = TransactionRepository(database, application)
+    // 1. USE REPOSITORY (The Engine)
+    private val db = AppDatabase.getDatabase(application)
+    private val repository = TransactionRepository(db, application)
 
-    // Read-only DAOs for UI Binding
-    private val transactionDao = database.transactionDao()
-    private val noteDao = database.currencyNoteDao()
-    private val accountDao = database.accountDao()
+    // We keep DAOs only for READS where Repository overhead isn't needed
+    private val transactionDao = db.transactionDao()
+    private val accountDao = db.accountDao()
+    private val noteDao = db.currencyNoteDao()
 
-    // STATE
+    // --- State ---
     private val _transaction = MutableStateFlow<Transaction?>(null)
-    val transaction: StateFlow<Transaction?> = _transaction.asStateFlow()
+    val transaction = _transaction.asStateFlow()
 
     private val _relatedNotes = MutableStateFlow<List<CurrencyNote>>(emptyList())
-    val relatedNotes: StateFlow<List<CurrencyNote>> = _relatedNotes.asStateFlow()
+    val relatedNotes = _relatedNotes.asStateFlow()
 
-    private val _accounts = accountDao.getAllAccounts()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-    val accounts: StateFlow<List<Account>> = _accounts
+    private val _accounts = MutableStateFlow<List<Account>>(emptyList())
+    val accounts = _accounts.asStateFlow()
 
-    private val _navigationEvent = MutableStateFlow<Boolean>(false)
-    val navigationEvent: StateFlow<Boolean> = _navigationEvent.asStateFlow()
+    // Used to signal navigation actions (Back after delete, or To-Edit-Screen)
+    private val _navigationEvent = MutableStateFlow<NavigationAction?>(null)
+    val navigationEvent = _navigationEvent.asStateFlow()
 
-    // Suggestions
-    val categorySuggestions: StateFlow<List<String>> = transactionDao.getUniqueCategories()
-        .map { (CoreData.allCategories + it).distinct().sorted() }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), CoreData.allCategories)
+    enum class NavigationAction {
+        NAVIGATE_BACK,
+        NAVIGATE_TO_EDIT
+    }
 
+    // --- Loading Data ---
     fun loadTransaction(id: Int) {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             val tx = transactionDao.getTransactionById(id)
             _transaction.value = tx
 
             if (tx != null) {
-                // High-Performance Query for linked notes
-                noteDao.getNotesByTransaction(id).collect { notes ->
-                    _relatedNotes.value = notes
-                }
+                // Load the inventory used in this transaction
+                _relatedNotes.value = noteDao.getNotesByTransactionId(tx.id)
             }
+            _accounts.value = accountDao.getAllAccountsSync()
         }
     }
 
-    // --- 1. FULL EDIT CAPABILITY ---
-    // This function accepts ALL fields, including Amount and Account.
-    fun updateFullTransaction(
-        newAmount: Double,
-        newDate: Long,
-        newCategory: String,
-        newDescription: String,
-        newAccountId: Int
-    ) {
-        val currentTx = _transaction.value ?: return
-
-        viewModelScope.launch {
-            val updatedTx = currentTx.copy(
-                amount = newAmount,
-                date = newDate,
-                category = newCategory,
-                description = newDescription,
-                accountId = newAccountId
-            )
-
-            try {
-                // The Repository handles the complex Math (Reversing old balance, applying new)
-                repository.updateTransaction(
-                    oldTx = currentTx,
-                    newTx = updatedTx
-                )
-
-                // Refresh local state immediately
-                _transaction.value = updatedTx
-
-            } catch (e: Exception) {
-                e.printStackTrace()
-                // You could add an error state here if needed
-            }
-        }
-    }
-
-    // --- 2. DELETE ---
+    // --- DELETE LOGIC (Now Safe & Atomic) ---
     fun deleteTransaction() {
         val tx = _transaction.value ?: return
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
+            // This calls the Repository method that handles:
+            // 1. Balance Reversal
+            // 2. Note Un-spending (Inventory Return)
+            // 3. Change Note Deletion
+            // 4. Record Deletion
             repository.deleteTransaction(tx.id)
-            _navigationEvent.value = true // Close Screen
+
+            _navigationEvent.value = NavigationAction.NAVIGATE_BACK
         }
     }
 
-    // --- 3. IMAGE MANAGEMENT ---
-    // These methods now update the Live Transaction object but persist via Repository
-    fun addImageUri(uriStr: String) {
-        updateImages { current -> current + uriStr }
+    // --- EDIT LOGIC (The Gateway) ---
+    // We no longer mutate state here. We ask the UI to open the "Sandbox" (AddTransactionScreen)
+    // passing this transaction ID to initialize the sandbox.
+    fun onEditClicked() {
+        _navigationEvent.value = NavigationAction.NAVIGATE_TO_EDIT
     }
 
-    fun removeImageUri(uri: String) {
-        updateImages { current -> current - uri }
-    }
-
-    private fun updateImages(transform: (List<String>) -> List<String>) {
-        val currentTx = _transaction.value ?: return
-        val newUris = transform(currentTx.imageUris)
-        val updatedTx = currentTx.copy(imageUris = newUris)
-
-        viewModelScope.launch {
-            // Using the smart update to ensure persistence
-            repository.updateTransaction(currentTx, updatedTx)
-            _transaction.value = updatedTx
-        }
+    fun consumeNavigationEvent() {
+        _navigationEvent.value = null
     }
 }

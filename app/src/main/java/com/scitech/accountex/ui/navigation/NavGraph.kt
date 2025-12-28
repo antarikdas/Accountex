@@ -1,7 +1,7 @@
 package com.scitech.accountex.ui.navigation
 
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.LaunchedEffect
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -12,10 +12,17 @@ import com.scitech.accountex.viewmodel.*
 
 // Define Routes
 sealed class Screen(val route: String) {
-    object Splash : Screen("splash") // <--- 1. NEW ROUTE
+    object Splash : Screen("splash")
     object Security : Screen("security")
     object Dashboard : Screen("dashboard")
-    object AddTransaction : Screen("add_transaction")
+    object Settings : Screen("settings")
+
+    // UPDATED: Now supports optional txId argument
+    object AddTransaction : Screen("add_transaction?txId={txId}") {
+        fun createRoute(txId: Int? = null) =
+            if (txId != null) "add_transaction?txId=$txId" else "add_transaction"
+    }
+
     object Ledger : Screen("ledger")
     object Analytics : Screen("analytics")
     object NoteInventory : Screen("note_inventory")
@@ -37,18 +44,17 @@ fun NavGraph(
     templateViewModel: TemplateViewModel,
     manageAccountsViewModel: ManageAccountsViewModel,
     dataManagementViewModel: DataManagementViewModel,
-    ledgerViewModel: LedgerViewModel
+    ledgerViewModel: LedgerViewModel,
+    settingsViewModel: SettingsViewModel
 ) {
     NavHost(
         navController = navController,
-        startDestination = Screen.Splash.route // <--- 2. START HERE
+        startDestination = Screen.Splash.route
     ) {
-        // --- 1. SPLASH SCREEN (The Entrance) ---
+        // --- SPLASH ---
         composable(Screen.Splash.route) {
             SplashScreen(
                 onAnimationFinished = {
-                    // When animation ends, go to Security.
-                    // popUpTo(Splash) ensures back button exits app, doesn't return to splash.
                     navController.navigate(Screen.Security.route) {
                         popUpTo(Screen.Splash.route) { inclusive = true }
                     }
@@ -56,11 +62,10 @@ fun NavGraph(
             )
         }
 
-        // --- 2. SECURITY SCREEN ---
+        // --- SECURITY ---
         composable(Screen.Security.route) {
             SecurityScreen(
                 onLoginSuccess = {
-                    // When login succeeds, go to Dashboard.
                     navController.navigate(Screen.Dashboard.route) {
                         popUpTo(Screen.Security.route) { inclusive = true }
                     }
@@ -68,11 +73,11 @@ fun NavGraph(
             )
         }
 
-        // --- 3. DASHBOARD ---
+        // --- DASHBOARD ---
         composable(Screen.Dashboard.route) {
             DashboardScreen(
                 viewModel = dashboardViewModel,
-                onAddTransactionClick = { navController.navigate(Screen.AddTransaction.route) },
+                onAddTransactionClick = { navController.navigate(Screen.AddTransaction.createRoute(null)) },
                 onTemplatesClick = { navController.navigate(Screen.Templates.route) },
                 onAnalyticsClick = { navController.navigate(Screen.Analytics.route) },
                 onNoteInventoryClick = { navController.navigate(Screen.NoteInventory.route) },
@@ -80,18 +85,43 @@ fun NavGraph(
                 onManageAccountsClick = { navController.navigate(Screen.ManageAccounts.route) },
                 onNavigateToBackup = { navController.navigate(Screen.Backup.route) },
                 onNavigateToLedger = { navController.navigate(Screen.Ledger.route) },
-                context = LocalContext.current
+                onSettingsClick = { navController.navigate(Screen.Settings.route) }
             )
         }
 
-        // ... (All other routes remain exactly the same below) ...
-        // --- ADD TRANSACTION ---
-        composable(Screen.AddTransaction.route) {
+        // --- SETTINGS ---
+        composable(Screen.Settings.route) {
+            SettingsScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
+        // --- ADD TRANSACTION (UPDATED) ---
+        composable(
+            route = Screen.AddTransaction.route,
+            arguments = listOf(navArgument("txId") {
+                type = NavType.IntType
+                defaultValue = -1 // Default to -1 (Create Mode)
+            })
+        ) { backStackEntry ->
+            val txId = backStackEntry.arguments?.getInt("txId") ?: -1
+
+            // INITIALIZE SANDBOX OR RESET
+            LaunchedEffect(txId) {
+                if (txId != -1) {
+                    addTransactionViewModel.loadTransactionForEdit(txId)
+                } else {
+                    // Logic to ensure clean state for new entry
+                    // (Assuming User resets manual inputs if needed, or we add a reset() later)
+                }
+            }
+
             AddTransactionScreen(
                 viewModel = addTransactionViewModel,
                 onNavigateBack = { navController.popBackStack() }
             )
         }
+
         // --- LEDGER ---
         composable(Screen.Ledger.route) {
             LedgerScreen(
@@ -100,6 +130,7 @@ fun NavGraph(
                 onTransactionClick = { id -> navController.navigate(Screen.TransactionDetail.createRoute(id)) }
             )
         }
+
         // --- TEMPLATES ---
         composable(Screen.Templates.route) {
             TemplatesScreen(
@@ -107,10 +138,11 @@ fun NavGraph(
                 onNavigateBack = { navController.popBackStack() },
                 onTemplateSelect = { template ->
                     addTransactionViewModel.applyTemplate(template)
-                    navController.navigate(Screen.AddTransaction.route)
+                    navController.navigate(Screen.AddTransaction.createRoute(null))
                 }
             )
         }
+
         // --- ANALYTICS ---
         composable(Screen.Analytics.route) {
             AnalyticsScreen(
@@ -118,6 +150,7 @@ fun NavGraph(
                 onNavigateBack = { navController.popBackStack() }
             )
         }
+
         // --- NOTE INVENTORY ---
         composable(Screen.NoteInventory.route) {
             NoteInventoryScreen(
@@ -125,6 +158,7 @@ fun NavGraph(
                 onNavigateBack = { navController.popBackStack() }
             )
         }
+
         // --- MANAGE ACCOUNTS ---
         composable(Screen.ManageAccounts.route) {
             ManageAccountsScreen(
@@ -132,6 +166,7 @@ fun NavGraph(
                 onNavigateBack = { navController.popBackStack() }
             )
         }
+
         // --- BACKUP ---
         composable(Screen.Backup.route) {
             DataManagementScreen(
@@ -139,15 +174,20 @@ fun NavGraph(
                 onNavigateBack = { navController.popBackStack() }
             )
         }
-        // --- TRANSACTION DETAIL ---
+
+        // --- TRANSACTION DETAIL (UPDATED) ---
         composable(
             route = Screen.TransactionDetail.route,
             arguments = listOf(navArgument("txId") { type = NavType.IntType })
         ) { backStackEntry ->
             val txId = backStackEntry.arguments?.getInt("txId") ?: 0
+
             TransactionDetailScreen(
                 transactionId = txId,
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToEdit = { id ->
+                    navController.navigate(Screen.AddTransaction.createRoute(id))
+                }
             )
         }
     }

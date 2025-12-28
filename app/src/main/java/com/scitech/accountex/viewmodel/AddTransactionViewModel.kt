@@ -33,16 +33,17 @@ data class TransactionFormState(
     val toAccountId: Int? = null,
     val selectedDate: Long = System.currentTimeMillis(),
     val inputMode: InputMode = InputMode.KEYPAD,
-    val error: String? = null // NEW: UI Error feedback
+    val error: String? = null,
+
+    // --- EDIT MODE FLAGS ---
+    val isEditing: Boolean = false,
+    val initialImageUris: List<String> = emptyList()
 )
 
 class AddTransactionViewModel(application: Application) : AndroidViewModel(application) {
 
-    // --- ARCHITECTURE UPGRADE: Use Repository, not DAOs directly ---
     private val database = AppDatabase.getDatabase(application)
     private val repository = TransactionRepository(database, application)
-
-    // Keep Read-Only DAOs for UI lists (allowed in MVVM)
     private val accountDao = database.accountDao()
     private val transactionDao = database.transactionDao()
     private val noteDao = database.currencyNoteDao()
@@ -67,25 +68,66 @@ class AddTransactionViewModel(application: Application) : AndroidViewModel(appli
         return (defaults + history).filter { seen.add(it.trim().lowercase()) }.sorted()
     }
 
-    // --- CASH STATE ---
+    // --- SANDBOX STATE ---
+    private var editingTransactionId: Int? = null
+
     private val _availableNotes = MutableStateFlow<List<CurrencyNote>>(emptyList())
     val availableNotes: StateFlow<List<CurrencyNote>> = _availableNotes.asStateFlow()
 
     private val _selectedNoteIds = MutableStateFlow<Set<Int>>(emptySet())
     val selectedNoteIds: StateFlow<Set<Int>> = _selectedNoteIds.asStateFlow()
 
-    // This holds notes you are RECEIVING (Income) OR notes you are getting as CHANGE (Expense)
     private val _incomingNotes = MutableStateFlow<List<DraftNote>>(emptyList())
     val incomingNotes: StateFlow<List<DraftNote>> = _incomingNotes.asStateFlow()
 
     private var inventoryJob: Job? = null
 
-    // --- INITIALIZATION ---
-    fun loadNotesForAccount(accountId: Int, type: TransactionType) {
+    // --- INITIALIZATION & ACCOUNT LOADING ---
+
+    // Called when User picks an account from dropdown
+    fun updateAccount(accountId: Int) {
+        val currentState = _uiState.value
+        if (currentState.selectedAccountId == accountId) return
+
+        _uiState.update { it.copy(selectedAccountId = accountId) }
+
+        if (editingTransactionId != null) {
+            // EDIT MODE: If we switch accounts, we must abandon the "Old Tx Snapshot" notes
+            // and load the "Active Notes" of the NEW account.
+            // We cannot carry over spent notes from Account A to Account B.
+            refreshSandboxInventoryForNewAccount(accountId, currentState.selectedType)
+        } else {
+            // CREATE MODE: Just switch the live listener
+            loadLiveNotesForAccount(accountId, currentState.selectedType)
+        }
+    }
+
+    // Called when User changes Transaction Type (Income/Expense)
+    fun updateType(type: TransactionType) {
+        _uiState.update {
+            it.copy(
+                selectedType = type,
+                isManualAmount = false,
+                amountInput = "",
+                error = null
+            )
+        }
+        clearNoteData() // Reset selection on type change
+
+        val accountId = _uiState.value.selectedAccountId
+        if (accountId != 0) {
+            if (editingTransactionId != null) {
+                refreshSandboxInventoryForNewAccount(accountId, type)
+            } else {
+                loadLiveNotesForAccount(accountId, type)
+            }
+        }
+    }
+
+    // --- LIVE LOADER (For Creating New Tx) ---
+    private fun loadLiveNotesForAccount(accountId: Int, type: TransactionType) {
         inventoryJob?.cancel()
         inventoryJob = viewModelScope.launch {
-            // Logic: If we are paying someone back (Third Party Out), we show Held Notes.
-            // Otherwise, we show our Personal Notes.
             val flow = if (type == TransactionType.THIRD_PARTY_OUT) {
                 noteDao.getActiveThirdPartyNotes(accountId)
             } else {
@@ -95,14 +137,90 @@ class AddTransactionViewModel(application: Application) : AndroidViewModel(appli
         }
     }
 
-    // --- UI ACTIONS ---
-    fun setInputMode(mode: InputMode) {
-        _uiState.update { it.copy(inputMode = mode, error = null) }
+    // --- SANDBOX LOADER (For Edit Mode Switching) ---
+    private fun refreshSandboxInventoryForNewAccount(accountId: Int, type: TransactionType) {
+        inventoryJob?.cancel()
+        // In Edit Mode, we fetch ONCE (Snapshot). We don't want live updates shifting items under our fingers.
+        viewModelScope.launch {
+            val notes = if (type == TransactionType.THIRD_PARTY_OUT) {
+                noteDao.getActiveThirdPartyNotes(accountId).first()
+            } else {
+                noteDao.getActivePersonalNotes(accountId).first()
+            }
+            _availableNotes.value = notes
+            _selectedNoteIds.value = emptySet() // Reset selection because account changed
+        }
     }
 
-    fun updateAmount(amount: String) {
-        _uiState.update { it.copy(amountInput = amount, isManualAmount = true, error = null) }
+    // --- THE CORE: LOAD TRANSACTION INTO SANDBOX ---
+    fun loadTransactionForEdit(txId: Int) {
+        inventoryJob?.cancel() // Stop live updates
+
+        viewModelScope.launch {
+            val tx = transactionDao.getTransactionById(txId) ?: return@launch
+            editingTransactionId = txId
+
+            // 1. Fetch Ecosystem (Notes involved in this transaction)
+            val allRelatedNotes = noteDao.getNotesByTransactionId(txId) // Uses the SUSPEND method now
+
+            // Notes we GAVE (Spent) - Need to appear in the "Wallet" again, pre-selected
+            val spentNotes = allRelatedNotes.filter { it.spentTransactionId == txId }
+
+            // Notes we RECEIVED (Income/Change) - Need to appear as "Drafts"
+            val createdNotes = allRelatedNotes.filter { it.receivedTransactionId == txId }
+
+            // 2. Fetch currently Active notes in the wallet (for potential swapping)
+            val activeNotes = noteDao.getActivePersonalNotes(tx.accountId).first()
+
+            // 3. Construct the Sandbox Inventory
+            // Inventory = (Active Notes) + (Notes we spent in THIS transaction)
+            val mergedInventory = (activeNotes + spentNotes)
+                .distinctBy { it.id }
+                .sortedByDescending { it.denomination }
+
+            _availableNotes.value = mergedInventory
+
+            // 4. Pre-Select the notes that were used
+            _selectedNoteIds.value = spentNotes.map { it.id }.toSet()
+
+            // 5. Convert "Created" notes back to UI Drafts
+            _incomingNotes.value = createdNotes.map { note ->
+                DraftNote(
+                    serial = if (note.type == CurrencyType.NOTE) note.serialNumber else "",
+                    denomination = note.denomination,
+                    isCoin = note.type == CurrencyType.COIN
+                )
+            }
+
+            // 6. Populate UI State
+            _uiState.update {
+                it.copy(
+                    selectedType = tx.type,
+                    amountInput = if (tx.amount % 1.0 == 0.0) tx.amount.toInt().toString() else tx.amount.toString(),
+                    isManualAmount = true,
+                    category = tx.category,
+                    description = tx.description,
+                    selectedAccountId = tx.accountId,
+                    toAccountId = tx.toAccountId,
+                    selectedDate = tx.date,
+                    thirdPartyName = tx.thirdPartyName ?: "",
+                    // Auto-detect mode: If notes were involved, assume Cash Desk mode
+                    inputMode = if (spentNotes.isNotEmpty() || createdNotes.isNotEmpty()) InputMode.CASH_DESK else InputMode.KEYPAD,
+                    initialImageUris = tx.imageUris,
+                    isEditing = true
+                )
+            }
+        }
     }
+
+    // --- UI HELPERS ---
+    fun setInputMode(mode: InputMode) { _uiState.update { it.copy(inputMode = mode, error = null) } }
+    fun updateAmount(amount: String) { _uiState.update { it.copy(amountInput = amount, isManualAmount = true, error = null) } }
+    fun updateCategory(s: String) { _uiState.update { it.copy(category = s, error = null) } }
+    fun updateDescription(s: String) { _uiState.update { it.copy(description = s) } }
+    fun updateThirdPartyName(s: String) { _uiState.update { it.copy(thirdPartyName = s) } }
+    fun updateDate(l: Long) { _uiState.update { it.copy(selectedDate = l) } }
+    fun updateToAccount(id: Int) { _uiState.update { it.copy(toAccountId = id) } }
 
     fun forceSyncAmount() {
         _uiState.update { it.copy(isManualAmount = false) }
@@ -114,22 +232,16 @@ class AddTransactionViewModel(application: Application) : AndroidViewModel(appli
         if (state.isManualAmount) return
 
         val isIncoming = state.selectedType == TransactionType.INCOME || state.selectedType == TransactionType.THIRD_PARTY_IN
-        // Note: For EXPENSE, we calculate amount based on Selected Notes minus Change
-
         var total = 0.0
 
         if (isIncoming) {
-            // Sum of notes we are adding
             total = _incomingNotes.value.sumOf { it.denomination }.toDouble()
         } else {
-            // EXPENSE / TRANSFER / THIRD_PARTY_OUT
             val selectedNotesSum = _availableNotes.value
                 .filter { it.id in _selectedNoteIds.value }
                 .sumOf { it.amount }
 
             val changeSum = _incomingNotes.value.sumOf { it.denomination }.toDouble()
-
-            // Logic: Expense Amount = (Notes I gave) - (Change I got back)
             total = if (selectedNotesSum > changeSum) selectedNotesSum - changeSum else 0.0
         }
 
@@ -138,24 +250,7 @@ class AddTransactionViewModel(application: Application) : AndroidViewModel(appli
         }
     }
 
-    fun updateType(type: TransactionType) {
-        _uiState.update { it.copy(selectedType = type, isManualAmount = false, amountInput = "", error = null) }
-        clearNoteData()
-        if (_uiState.value.selectedAccountId != 0) loadNotesForAccount(_uiState.value.selectedAccountId, type)
-    }
-
-    // Standard field updates
-    fun updateAccount(id: Int) {
-        _uiState.update { it.copy(selectedAccountId = id) }
-        loadNotesForAccount(id, _uiState.value.selectedType)
-    }
-    fun updateCategory(s: String) { _uiState.update { it.copy(category = s, error = null) } }
-    fun updateDescription(s: String) { _uiState.update { it.copy(description = s) } }
-    fun updateThirdPartyName(s: String) { _uiState.update { it.copy(thirdPartyName = s) } }
-    fun updateDate(l: Long) { _uiState.update { it.copy(selectedDate = l) } }
-    fun updateToAccount(id: Int) { _uiState.update { it.copy(toAccountId = id) } }
-
-    // --- CASH HANDLING ---
+    // --- CASH DESK LOGIC ---
     fun toggleNoteSelection(noteId: Int) {
         val current = _selectedNoteIds.value.toMutableSet()
         if (current.contains(noteId)) current.remove(noteId) else current.add(noteId)
@@ -171,9 +266,7 @@ class AddTransactionViewModel(application: Application) : AndroidViewModel(appli
     }
 
     fun addBulkIncomingNotes(denom: Int, count: Int, isCoin: Boolean) {
-        val newNotes = List(count) {
-            DraftNote(if(isCoin) "COIN-${UUID.randomUUID().toString().take(4)}" else "", denom, isCoin)
-        }
+        val newNotes = List(count) { DraftNote("", denom, isCoin) }
         val list = _incomingNotes.value.toMutableList()
         list.addAll(newNotes)
         _incomingNotes.value = list
@@ -206,11 +299,13 @@ class AddTransactionViewModel(application: Application) : AndroidViewModel(appli
                 error = null
             )
         }
-        loadNotesForAccount(template.accountId, TransactionType.EXPENSE)
+        // Template application is treated as a "New Entry", so we load live notes
+        editingTransactionId = null
+        loadLiveNotesForAccount(template.accountId, TransactionType.EXPENSE)
     }
 
-    // --- SAVE LOGIC (THE BIG CHANGE) ---
-    fun addTransaction(imageUris: List<String>) {
+    // --- SAVE / UPDATE ---
+    fun saveTransaction(imageUris: List<String>) {
         val state = _uiState.value
         val amount = state.amountInput.toDoubleOrNull() ?: 0.0
 
@@ -219,8 +314,7 @@ class AddTransactionViewModel(application: Application) : AndroidViewModel(appli
             return
         }
 
-        // --- VALIDATION: THE "CHANGE" PROBLEM ---
-        // If we are in CASH_DESK mode for an EXPENSE, math must be perfect.
+        // Integrity Check: Cash Desk Math
         if (state.inputMode == InputMode.CASH_DESK &&
             (state.selectedType == TransactionType.EXPENSE || state.selectedType == TransactionType.THIRD_PARTY_OUT)) {
 
@@ -229,59 +323,80 @@ class AddTransactionViewModel(application: Application) : AndroidViewModel(appli
                 .sumOf { it.amount }
 
             val changeSum = _incomingNotes.value.sumOf { it.denomination }.toDouble()
-
-            // Expected: (Money I Gave) - (Cost of Item) == (Change I Got)
             val expectedChange = selectedNotesSum - amount
 
-            // Allow 0.01 margin for floating point errors
             if (abs(expectedChange - changeSum) > 0.01) {
-                val msg = "Math Mismatch! You gave ${selectedNotesSum.toInt()}, item is ${amount.toInt()}. Change must be ${expectedChange.toInt()}, but you recorded ${changeSum.toInt()}."
+                val msg = "Math Mismatch! Selected: ${selectedNotesSum.toInt()}, Cost: ${amount.toInt()}, Change Expected: ${expectedChange.toInt()}, but Entered: ${changeSum.toInt()}."
                 _uiState.update { it.copy(error = msg) }
                 return
             }
         }
 
-        // --- PREPARE DATA FOR REPOSITORY ---
         viewModelScope.launch {
             val isThirdPartyIn = state.selectedType == TransactionType.THIRD_PARTY_IN
 
-            // Convert DraftNotes to Real CurrencyNotes
+            // 1. Prepare Note Entities
             val newNotes = _incomingNotes.value.map { draft ->
+                val type = if (draft.isCoin) CurrencyType.COIN else CurrencyType.NOTE
+                val finalSerial = if (type == CurrencyType.NOTE) {
+                    draft.serial.ifBlank { "UNKNOWN-${UUID.randomUUID().toString().take(8)}" }
+                } else {
+                    ""
+                }
+
                 CurrencyNote(
-                    serialNumber = draft.serial.ifBlank { "UNKNOWN-${UUID.randomUUID().toString().take(8)}" },
+                    type = type,
+                    serialNumber = finalSerial,
                     amount = draft.denomination.toDouble(),
                     denomination = draft.denomination,
-                    // If Transfer, notes go to Dest. If Income/Change, they go to Source.
-                    accountId = if(state.selectedType == TransactionType.TRANSFER) state.toAccountId ?: state.selectedAccountId else state.selectedAccountId,
-                    receivedTransactionId = 0, // Repository will fill this
+                    // IMPORTANT: If Transfer, incoming notes go to destination account
+                    accountId = if (state.selectedType == TransactionType.TRANSFER) state.toAccountId ?: state.selectedAccountId else state.selectedAccountId,
+                    receivedTransactionId = 0, // Set by Repo
                     receivedDate = state.selectedDate,
                     isThirdParty = isThirdPartyIn,
-                    thirdPartyName = if(isThirdPartyIn) state.thirdPartyName else null
+                    thirdPartyName = if (isThirdPartyIn) state.thirdPartyName else null
                 )
             }
 
+            // 2. Prepare Transaction Entity
+            val txId = editingTransactionId ?: 0
             val tx = Transaction(
+                id = txId,
                 type = state.selectedType,
                 amount = amount,
-                category = if(state.selectedType == TransactionType.EXCHANGE) "Currency Exchange" else state.category,
+                category = if (state.selectedType == TransactionType.EXCHANGE) "Currency Exchange" else state.category,
                 description = state.description,
                 date = state.selectedDate,
                 accountId = state.selectedAccountId,
                 toAccountId = state.toAccountId,
-                imageUris = imageUris, // Repository handles saving
+                imageUris = imageUris,
                 thirdPartyName = state.thirdPartyName
             )
 
             try {
-                // ATOMIC SAVE via Repository
-                repository.saveTransactionWithNotes(
-                    transaction = tx,
-                    spentNoteIds = _selectedNoteIds.value,
-                    newNotes = newNotes
-                )
+                if (editingTransactionId != null) {
+                    // --- ATOMIC UPDATE ---
+                    val oldTx = transactionDao.getTransactionById(txId)
+                    if (oldTx != null) {
+                        repository.updateTransactionWithInventory(
+                            oldTx = oldTx,
+                            newTx = tx,
+                            newNotes = newNotes,
+                            spentNoteIds = _selectedNoteIds.value
+                        )
+                    }
+                } else {
+                    // --- ATOMIC CREATE ---
+                    repository.saveTransactionWithNotes(
+                        transaction = tx,
+                        spentNoteIds = _selectedNoteIds.value,
+                        newNotes = newNotes
+                    )
+                }
 
-                // Reset UI on success
+                // Cleanup
                 _uiState.value = TransactionFormState()
+                editingTransactionId = null
                 clearNoteData()
 
             } catch (e: Exception) {

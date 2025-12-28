@@ -20,8 +20,6 @@ class MainActivity : FragmentActivity() {
         setContent {
             AccountexTheme {
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    // We no longer handle locking here.
-                    // The NavGraph automatically starts with 'SecurityScreen'.
                     AccountexApp()
                 }
             }
@@ -31,11 +29,9 @@ class MainActivity : FragmentActivity() {
 
 @Composable
 fun AccountexApp() {
-    // 1. Setup Navigation Controller
     val navController = rememberNavController()
 
-    // 2. Initialize ViewModels
-    // Ideally, use Hilt for dependency injection in the future, but this works perfectly for now.
+    // Initialize ViewModels
     val dashboardViewModel: DashboardViewModel = viewModel()
     val addTransactionViewModel: AddTransactionViewModel = viewModel()
     val analyticsViewModel: AnalyticsViewModel = viewModel()
@@ -44,9 +40,8 @@ fun AccountexApp() {
     val manageAccountsViewModel: ManageAccountsViewModel = viewModel()
     val dataManagementViewModel: DataManagementViewModel = viewModel()
     val ledgerViewModel: LedgerViewModel = viewModel()
+    val settingsViewModel: SettingsViewModel = viewModel() // <--- NEW
 
-    // 3. Launch the Graph
-    // The NavGraph logic inside ensures we start at the Security Screen.
     NavGraph(
         navController = navController,
         dashboardViewModel = dashboardViewModel,
@@ -56,6 +51,7 @@ fun AccountexApp() {
         templateViewModel = templateViewModel,
         manageAccountsViewModel = manageAccountsViewModel,
         dataManagementViewModel = dataManagementViewModel,
-        ledgerViewModel = ledgerViewModel
+        ledgerViewModel = ledgerViewModel,
+        settingsViewModel = settingsViewModel // <--- PASS IT
     )
 }

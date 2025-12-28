@@ -21,36 +21,17 @@ class TransactionRepository(
     private val noteDao = db.currencyNoteDao()
 
     // ============================================================================================
-    // 🛡️ FORENSIC SELF-HEALING SYSTEM (The "Fail-Proof" Layer)
+    // 🛡️ FORENSIC SELF-HEALING SYSTEM
     // ============================================================================================
-
-    /**
-     * The "Fail-Proof" Mechanism.
-     * Checks if the stored balance matches the mathematical reality of millions of transactions.
-     * If they mismatch (due to crash, bug, or glitch), it auto-corrects the balance.
-     * * PERFORMANCE NOTE:
-     * - 10k rows: < 10ms
-     * - 1M rows: ~500ms (depending on device)
-     * - 10M+ rows: ~2-5s
-     * * This runs on Dispatchers.IO, so the UI REMAINS INSTANT regardless of dataset size.
-     */
     suspend fun verifyAndRepairLedger() {
         withContext(Dispatchers.IO) {
             val accounts = accountDao.getAllAccountsSync()
-
             accounts.forEach { account ->
                 val cachedBalance = account.balance
-
-                // This calculates the 'Truth' from the full transaction history.
                 val trueBalance = accountDao.calculateTrueBalanceFromHistory(account.id)
 
-                // We allow a tiny floating-point drift (0.001) which is normal in computers.
-                // Anything larger means the data is corrupted and needs fixing.
                 if (abs(cachedBalance - trueBalance) > 0.001) {
-                    Log.e("AccountexAudit", "CRITICAL: Integrity Drift detected for '${account.name}'. " +
-                            "Stored: $cachedBalance, Actual: $trueBalance. Initiating Auto-Repair.")
-
-                    // ATOMIC REPAIR: Force the database to accept the calculated truth
+                    Log.e("AccountexAudit", "CRITICAL: Integrity Drift detected. Stored: $cachedBalance, Actual: $trueBalance. Repairing.")
                     val fixedAccount = account.copy(balance = trueBalance)
                     accountDao.updateAccount(fixedAccount)
                 }
@@ -59,22 +40,17 @@ class TransactionRepository(
     }
 
     // ============================================================================================
-    // 🚀 HIGH-SPEED ANALYTICS (Pass-Through)
+    // 🚀 ANALYTICS
     // ============================================================================================
-    // These streams are heavily optimized by Room/SQLite to return only aggregated results.
-    // They are safe to use with millions of rows.
     fun getTotalsByType(start: Long, end: Long): Flow<List<TypeTotal>> = transactionDao.getTotalsByType(start, end)
     fun getTopExpenseCategories(start: Long, end: Long): Flow<List<CategoryTotal>> = transactionDao.getTopExpenseCategories(start, end)
-
-    // Standard list stream. For 1M+ rows, ensure your UI uses LazyColumn (which it does).
     fun getAllTransactions() = transactionDao.getAllTransactions()
 
     // ============================================================================================
-    // ✍️ ATOMIC WRITE OPERATIONS (Preserved & Safe)
+    // ✍️ ATOMIC WRITE OPERATIONS (The Engine)
     // ============================================================================================
-    // These functions use @Transaction blocks. If power fails mid-save, the DB rolls back
-    // completely, ensuring no "Half-Saved" corrupt data exists.
 
+    // 1. CREATE NEW
     suspend fun saveTransactionWithNotes(
         transaction: Transaction,
         spentNoteIds: Set<Int>,
@@ -87,51 +63,68 @@ class TransactionRepository(
             db.withTransaction {
                 val txId = transactionDao.insertTransaction(finalTransaction).toInt()
 
-                // Inventory Management
+                // Inventory: Spend selected notes
                 spentNoteIds.forEach { noteId ->
                     noteDao.markAsSpent(noteId, txId, finalTransaction.date)
                 }
+                // Inventory: Create new notes (Income/Change)
                 newNotes.forEach { note ->
                     noteDao.insertNote(note.copy(receivedTransactionId = txId, receivedDate = finalTransaction.date))
                 }
 
-                // Optimistic Balance Update (Instant)
                 applyBalanceUpdate(finalTransaction, finalTransaction.amount)
             }
         }
     }
 
-    suspend fun updateTransaction(oldTx: Transaction, newTx: Transaction) {
+    // 2. UPDATE EXISTING (THE "ATOMIC SWAP")
+    suspend fun updateTransactionWithInventory(
+        oldTx: Transaction,
+        newTx: Transaction,
+        newNotes: List<CurrencyNote>,
+        spentNoteIds: Set<Int>
+    ) {
         withContext(Dispatchers.IO) {
             val processedImages = saveImagesToInternalStorage(newTx.imageUris)
             val finalNewTx = newTx.copy(imageUris = processedImages)
 
             db.withTransaction {
-                // 1. Revert Old (Undo Effect)
+                // A. REVERSE OLD STATE (Undo)
                 reverseBalanceUpdate(oldTx)
 
-                // 2. Apply New (Apply Effect)
+                // Inventory Reversal:
+                // 1. Release the notes we spent (Give them back to the wallet)
+                noteDao.unspendNotesForTransaction(oldTx.id)
+                // 2. Destroy the notes we created (Remove income/change)
+                noteDao.deleteNotesFromTransaction(oldTx.id)
+
+                // B. APPLY NEW STATE (Redo)
                 applyBalanceUpdate(finalNewTx, finalNewTx.amount)
 
-                // 3. Update Record
+                // Inventory Application:
+                // 1. Spend the NEW selected notes
+                spentNoteIds.forEach { noteId ->
+                    noteDao.markAsSpent(noteId, finalNewTx.id, finalNewTx.date)
+                }
+                // 2. Create the NEW notes
+                newNotes.forEach { note ->
+                    noteDao.insertNote(note.copy(receivedTransactionId = finalNewTx.id, receivedDate = finalNewTx.date))
+                }
+
+                // C. UPDATE RECORD
                 transactionDao.updateTransaction(finalNewTx)
             }
         }
     }
 
+    // 3. DELETE
     suspend fun deleteTransaction(txId: Int) {
         withContext(Dispatchers.IO) {
             db.withTransaction {
                 val tx = transactionDao.getTransactionById(txId) ?: return@withTransaction
-
-                // 1. Revert Financials
                 reverseBalanceUpdate(tx)
-
-                // 2. Revert Inventory
                 noteDao.unspendNotesForTransaction(txId)
                 noteDao.deleteNotesFromTransaction(txId)
-
-                // 3. Delete Record
                 transactionDao.deleteTransaction(tx)
             }
         }

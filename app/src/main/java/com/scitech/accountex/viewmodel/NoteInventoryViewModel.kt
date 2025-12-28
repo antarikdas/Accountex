@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.scitech.accountex.data.AppDatabase
 import com.scitech.accountex.data.CurrencyNote
+import com.scitech.accountex.data.CurrencyType
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
@@ -25,7 +26,6 @@ class NoteInventoryViewModel(application: Application) : AndroidViewModel(applic
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // We use the "All Notes" stream but filter it in memory for complex grouping
-    // (Performance note: If >10k notes, move filtering to DAO)
     private val _allNotes = noteDao.getAllNotes()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -38,18 +38,24 @@ class NoteInventoryViewModel(application: Application) : AndroidViewModel(applic
             notes.filter { it.spentTransactionId == null && it.accountId == accId }
         }
 
-        // Step B: Grouping logic
-        val grouped = filteredNotes.groupBy { it.denomination }
-            .map { (denom, noteList) ->
+        // Step B: Grouping logic (CRITICAL FIX)
+        // We now group by BOTH Denomination AND Type.
+        // This separates ₹10 Notes from ₹10 Coins.
+        val grouped = filteredNotes.groupBy { Pair(it.denomination, it.type) }
+            .map { (key, noteList) ->
+                val (denom, type) = key
                 InventoryItem(
                     denomination = denom,
+                    type = type, // Explicit Type
                     count = noteList.size,
                     totalValue = noteList.sumOf { it.amount },
-                    isCoin = denom <= 20,
-                    notes = noteList // <-- PASSING FULL LIST FOR SERIAL DISPLAY
+                    isCoin = type == CurrencyType.COIN, // Logic based on Fact, not Assumption
+                    notes = noteList
                 )
             }
-            .sortedByDescending { it.denomination }
+            // Sort: High value first, then Notes before Coins
+            .sortedWith(compareByDescending<InventoryItem> { it.denomination }
+                .thenBy { it.isCoin }) // Notes (false) come before Coins (true)
 
         val totalValue = grouped.sumOf { it.totalValue }
         val totalCount = grouped.sumOf { it.count }
@@ -71,6 +77,7 @@ data class InventoryData(
 
 data class InventoryItem(
     val denomination: Int,
+    val type: CurrencyType, // Added for UI styling
     val count: Int,
     val totalValue: Double,
     val isCoin: Boolean,
