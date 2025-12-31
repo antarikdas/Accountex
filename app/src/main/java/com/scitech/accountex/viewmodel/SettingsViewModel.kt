@@ -7,6 +7,8 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.scitech.accountex.data.AppDatabase
+import com.scitech.accountex.ui.theme.CurrentTheme
+import com.scitech.accountex.ui.theme.ThemeType
 import com.scitech.accountex.utils.SecurityPreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,8 +28,28 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val prefs = SecurityPreferences(application)
     private val context = application.applicationContext
 
+    // 🧠 SHARED PREFERENCES (Built-in, No Dependencies needed)
+    private val themePrefs = application.getSharedPreferences("accountex_theme_prefs", Context.MODE_PRIVATE)
+    private val THEME_KEY = "app_theme"
+
     private val _isLoading = MutableStateFlow(false)
     val isLoading = _isLoading.asStateFlow()
+
+    init {
+        // 🚀 LOAD THEME ON STARTUP
+        val savedThemeName = themePrefs.getString(THEME_KEY, ThemeType.Nebula.name) ?: ThemeType.Nebula.name
+        CurrentTheme = try {
+            ThemeType.valueOf(savedThemeName)
+        } catch (e: Exception) {
+            ThemeType.Nebula
+        }
+    }
+
+    // 🧠 SET THEME
+    fun setTheme(theme: ThemeType) {
+        CurrentTheme = theme
+        themePrefs.edit().putString(THEME_KEY, theme.name).apply()
+    }
 
     // --- SECURITY ---
     fun isBiometricEnabled(): Boolean = prefs.isBiometricEnabled()
@@ -46,14 +68,20 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun factoryReset() {
         viewModelScope.launch(Dispatchers.IO) {
             _isLoading.value = true
+
+            // 1. Clear Database
             db.clearAllTables()
 
-            // Wipe Images
+            // 2. Wipe Images
             val imagesDir = File(context.filesDir, "Accountex_Images")
             if (imagesDir.exists()) imagesDir.deleteRecursively()
 
-            // Wipe Security
+            // 3. Wipe Security
             clearPin()
+
+            // 4. Wipe Theme Preferences
+            themePrefs.edit().clear().apply()
+
             _isLoading.value = false
         }
     }

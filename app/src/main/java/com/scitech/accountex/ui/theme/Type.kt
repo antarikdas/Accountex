@@ -6,35 +6,42 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
-// Ideally, we would import "Outfit" or "Manrope" here from res/font.
-// For now, we tune the System Font to look premium.
+// ============================================================================
+// 🧠 TYPOGRAPHY — CALM AUTHORITY + DOMINANCE
+// ============================================================================
 
 val Typography = Typography(
-    // 1. HUGE BALANCES (Dashboard Header)
+
+    // TOTAL BALANCE / PRIMARY NUMBERS
     displayLarge = TextStyle(
         fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.Bold,
-        fontSize = 48.sp,
-        letterSpacing = (-1.5).sp // Tight tracking for modern look
+        fontWeight = FontWeight.ExtraBold,
+        fontSize = 46.sp,
+        letterSpacing = (-0.5).sp
     ),
 
-    // 2. SECTION HEADERS ("Recent Transactions")
+    // INPUT AMOUNTS
+    headlineLarge = TextStyle(
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.Bold,
+        fontSize = 50.sp
+    ),
+
+    // SECTION HEADERS
     headlineMedium = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 20.sp,
-        letterSpacing = 0.5.sp
+        fontSize = 20.sp
     ),
 
-    // 3. CARD TITLES ("Net Savings")
+    // CARD TITLES
     titleMedium = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Medium,
-        fontSize = 16.sp,
-        letterSpacing = 0.15.sp
+        fontSize = 16.sp
     ),
 
-    // 4. BODY TEXT (Descriptions)
+    // BODY TEXT
     bodyMedium = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Normal,
@@ -42,20 +49,26 @@ val Typography = Typography(
         lineHeight = 20.sp
     ),
 
-    // 5. BUTTONS ("Save Transaction")
+    // TRANSACTIONS / TABLE DATA
+    bodyLarge = TextStyle(
+        fontFamily = FontFamily.Monospace,
+        fontWeight = FontWeight.Medium,
+        fontSize = 16.sp
+    ),
+
+    // LABELS (OFFICIAL, QUIET)
+    labelSmall = TextStyle(
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.Bold,
+        fontSize = 11.sp,
+        letterSpacing = 1.8.sp
+    ),
+
+    // BUTTONS
     labelLarge = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Bold,
         fontSize = 14.sp,
-        letterSpacing = 1.sp // Uppercase look
-    ),
-
-    // 6. FINANCIAL DATA (The Monospace Fix)
-    // Use this style for ALL currency displays
-    bodyLarge = TextStyle(
-        fontFamily = FontFamily.Monospace, // Ensures numbers align vertically
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 16.sp,
-        letterSpacing = 0.sp
+        letterSpacing = 0.8.sp
     )
 )

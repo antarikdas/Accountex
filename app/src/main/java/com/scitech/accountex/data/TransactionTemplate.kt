@@ -10,5 +10,8 @@ data class TransactionTemplate(
     val name: String,
     val category: String,
     val defaultAmount: Double,
-    val accountId: Int
+    val accountId: Int,
+
+    // [NEW] Critical for Premium Color Logic (Gold vs Coral)
+    val type: TransactionType
 )

@@ -12,7 +12,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -25,9 +24,11 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.scitech.accountex.ui.theme.AppTheme
 import com.scitech.accountex.utils.formatCurrency
 import com.scitech.accountex.viewmodel.AnalyticsViewModel
 import com.scitech.accountex.viewmodel.TimeRange
@@ -41,14 +42,16 @@ fun AnalyticsScreen(
     val state by viewModel.analyticsState.collectAsState()
     val timeRange by viewModel.timeRange.collectAsState()
 
+    // 🧠 SYSTEM THEME
+    val colors = AppTheme.colors
+
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = colors.background,
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text("Financial Health", style = MaterialTheme.typography.titleMedium) },
-                // FIX: Use standard ArrowBack to avoid AutoMirrored issues if library is old
-                navigationIcon = { IconButton(onClick = onNavigateBack) { Icon(Icons.Default.ArrowBack, "Back") } },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+                title = { Text("Financial Health", style = MaterialTheme.typography.titleMedium, color = colors.textPrimary) },
+                navigationIcon = { IconButton(onClick = onNavigateBack) { Icon(Icons.Default.ArrowBack, "Back", tint = colors.textPrimary) } },
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = colors.background)
             )
         }
     ) { padding ->
@@ -66,7 +69,7 @@ fun AnalyticsScreen(
                     .fillMaxWidth()
                     .height(50.dp)
                     .clip(RoundedCornerShape(16.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                    .background(colors.surfaceCard) // Card surface for the container
                     .padding(4.dp),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
@@ -79,32 +82,30 @@ fun AnalyticsScreen(
             val balance = state.income - state.expense
             val isPositive = balance >= 0
 
-            // Define colors locally for the chart logic, mapped from Theme
-            val incomeColor = MaterialTheme.colorScheme.tertiary // Gold
-            val expenseColor = MaterialTheme.colorScheme.error // Coral
+            // Define colors locally for the chart logic
+            val incomeColor = colors.trendUp
+            val expenseColor = colors.trendDown
 
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                ),
-                elevation = CardDefaults.cardElevation(8.dp),
+                colors = CardDefaults.cardColors(containerColor = colors.surfaceCard),
+                elevation = CardDefaults.cardElevation(0.dp),
                 shape = RoundedCornerShape(24.dp)
             ) {
                 Box(modifier = Modifier.background(
                     Brush.verticalGradient(
                         colors = listOf(
-                            MaterialTheme.colorScheme.surface,
-                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                            colors.surfaceCard,
+                            colors.surfaceHighlight.copy(alpha = 0.3f)
                         )
                     )
                 )) {
                     Column(modifier = Modifier.padding(24.dp)) {
-                        Text("NET SAVINGS", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, letterSpacing = 2.sp)
+                        Text("NET SAVINGS", style = MaterialTheme.typography.labelSmall, color = colors.textSecondary, letterSpacing = 2.sp)
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             formatCurrency(balance),
-                            style = MaterialTheme.typography.displayMedium.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
+                            style = MaterialTheme.typography.displayMedium.copy(fontFamily = FontFamily.Monospace),
                             fontWeight = FontWeight.Bold,
                             color = if (isPositive) incomeColor else expenseColor
                         )
@@ -116,7 +117,7 @@ fun AnalyticsScreen(
 
                         Column {
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("Spending Limit", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("Spending Limit", style = MaterialTheme.typography.labelSmall, color = colors.textSecondary)
                                 Text("${(safeProgress * 100).toInt()}% Used", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = if(safeProgress > 0.8f) expenseColor else incomeColor)
                             }
                             Spacer(modifier = Modifier.height(8.dp))
@@ -124,23 +125,23 @@ fun AnalyticsScreen(
                                 progress = { safeProgress },
                                 modifier = Modifier.fillMaxWidth().height(12.dp).clip(RoundedCornerShape(6.dp)),
                                 color = expenseColor,
-                                trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                                trackColor = colors.surfaceHighlight, // Subtle track
                             )
                         }
 
                         Spacer(modifier = Modifier.height(24.dp))
 
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            StatColumn("Earned", state.income, incomeColor)
-                            Box(modifier = Modifier.width(1.dp).height(40.dp).background(MaterialTheme.colorScheme.outlineVariant))
-                            StatColumn("Spent", state.expense, expenseColor)
+                            StatColumn("Earned", state.income, incomeColor, colors)
+                            Box(modifier = Modifier.width(1.dp).height(40.dp).background(colors.divider))
+                            StatColumn("Spent", state.expense, expenseColor, colors)
                         }
                     }
                 }
             }
 
             // 3. Category Breakdown (Donut)
-            Text("Where did it go?", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Text("Where did it go?", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = colors.textPrimary)
 
             if (state.pieSlices.isNotEmpty()) {
                 Row(
@@ -152,8 +153,8 @@ fun AnalyticsScreen(
                         AnimatedDonutChart(state.pieSlices)
                         // Center Text
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("Total", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text(formatCurrency(state.expense), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                            Text("Total", style = MaterialTheme.typography.labelSmall, color = colors.textSecondary)
+                            Text(formatCurrency(state.expense), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = colors.textPrimary)
                         }
                     }
 
@@ -166,16 +167,16 @@ fun AnalyticsScreen(
                                 Box(modifier = Modifier.size(10.dp).background(slice.color, CircleShape))
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Column {
-                                    Text(slice.label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
-                                    Text("${(slice.percentage * 100).toInt()}%", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(slice.label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = colors.textPrimary)
+                                    Text("${(slice.percentage * 100).toInt()}%", style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
                                 }
                             }
                         }
                     }
                 }
             } else {
-                Box(modifier = Modifier.fillMaxWidth().height(100.dp).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f), RoundedCornerShape(16.dp)), contentAlignment = Alignment.Center) {
-                    Text("No spending data yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Box(modifier = Modifier.fillMaxWidth().height(100.dp).background(colors.surfaceHighlight, RoundedCornerShape(16.dp)), contentAlignment = Alignment.Center) {
+                    Text("No spending data yet.", color = colors.textSecondary)
                 }
             }
 
@@ -186,16 +187,16 @@ fun AnalyticsScreen(
 
 // --- HELPERS ---
 
-// FIX: Added 'RowScope.' receiver so 'Modifier.weight(1f)' works
 @Composable
 fun RowScope.TimeTab(label: String, isSelected: Boolean, onClick: () -> Unit) {
-    val bgColor = if (isSelected) MaterialTheme.colorScheme.surface else Color.Transparent
-    val textColor = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
-    // Removed unused 'shadow' variable
+    val colors = AppTheme.colors
+    // If selected -> Brand Primary background. If not -> Transparent.
+    val bgColor = if (isSelected) colors.brandPrimary else Color.Transparent
+    val textColor = if (isSelected) colors.textInverse else colors.textSecondary
 
     Box(
         modifier = Modifier
-            .weight(1f) // Now this works because we are in RowScope
+            .weight(1f)
             .fillMaxHeight()
             .clip(RoundedCornerShape(12.dp))
             .background(bgColor)
@@ -212,12 +213,12 @@ fun RowScope.TimeTab(label: String, isSelected: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-fun StatColumn(label: String, amount: Double, color: Color) {
+fun StatColumn(label: String, amount: Double, color: Color, systemColors: com.scitech.accountex.ui.theme.AccountexColors) {
     Column {
-        Text(label.uppercase(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(label.uppercase(), style = MaterialTheme.typography.labelSmall, color = systemColors.textSecondary)
         Text(
             formatCurrency(amount),
-            style = MaterialTheme.typography.titleMedium.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
+            style = MaterialTheme.typography.titleMedium.copy(fontFamily = FontFamily.Monospace),
             fontWeight = FontWeight.Bold,
             color = color
         )
